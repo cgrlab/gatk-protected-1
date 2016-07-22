@@ -79,7 +79,7 @@ final class TestHMModel implements HiddenMarkovModel<TestHMModel.Datum, Integer,
     }
 
     @Override
-    public List<State> hiddenStates() {
+    public List<State> getHiddenStates() {
         return Collections.unmodifiableList(Arrays.asList(State.A, State.B, State.C));
     }
 

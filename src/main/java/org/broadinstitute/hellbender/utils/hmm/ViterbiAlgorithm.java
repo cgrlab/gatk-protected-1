@@ -26,7 +26,7 @@ public final class ViterbiAlgorithm {
      * @param <T> time data type.
      * @param <S> hidden state data-type.
      * @return never {@code null}, with only valid states as returned by <code>model.
-     * {@link HiddenMarkovModel#hiddenStates() hiddenStates()}</code>.
+     * {@link HiddenMarkovModel#getHiddenStates() getHiddenStates()}</code>.
      *         its length will be the sames as the length of the input {@code data}.
      * @throws IllegalArgumentException if any of the following is true:
      * <ul>
@@ -45,7 +45,7 @@ public final class ViterbiAlgorithm {
         }
 
         @SuppressWarnings("unchecked")
-        final S[] states = (S[]) model.hiddenStates().stream().toArray(Object[]::new);
+        final S[] states = (S[]) model.getHiddenStates().stream().toArray(Object[]::new);
         final int length = data.size();
         final int numStates = states.length;
 

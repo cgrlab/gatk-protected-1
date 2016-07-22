@@ -325,7 +325,7 @@ public final class ForwardBackwardAlgorithm {
             final List<D> data,
             final List<T> positions) {
 
-        final List<S> states = model.hiddenStates();
+        final List<S> states = model.getHiddenStates();
         final int numStates = states.size();
         final int length = data.size();
         final double[][] result = new double[length][numStates];
@@ -386,7 +386,7 @@ public final class ForwardBackwardAlgorithm {
                                                                         final List<D> dataList,
                                                                         final List<T> positionList) {
 
-        final List<S> states = model.hiddenStates();
+        final List<S> states = model.getHiddenStates();
         final int numStates = states.size();
         final int length = dataList.size();
 
@@ -459,7 +459,7 @@ public final class ForwardBackwardAlgorithm {
             this.positionIndexRange = new IntRange(0, positions.size() - 1);
             this.model = model;
             this.positionIndex = composeIndexMap(this.positions);
-            this.stateIndex = composeIndexMap(model.hiddenStates());
+            this.stateIndex = composeIndexMap(model.getHiddenStates());
             this.logBackwardProbabilities = logBackwardProbabilities;
             this.logForwardProbabilities = logForwardProbabilities;
             this.logDataLikelihood = calculateLogDataLikelihood(logForwardProbabilities, logBackwardProbabilities);

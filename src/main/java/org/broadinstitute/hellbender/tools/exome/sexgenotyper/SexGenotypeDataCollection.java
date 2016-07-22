@@ -6,10 +6,8 @@ import org.broadinstitute.hellbender.utils.tsv.TableColumnCollection;
 
 import javax.annotation.Nonnull;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -19,38 +17,48 @@ import java.util.stream.Collectors;
  */
 public final class SexGenotypeDataCollection {
     private final List<SexGenotypeData> sexGenotypeDataList;
+    private final Set<String> sampleNames;
+    private final Map<String, SexGenotypeData> sampleNamesToSexGenotypeDataMap;
 
     /**
      * Public constructor (empty collection).
      */
     public SexGenotypeDataCollection() {
         sexGenotypeDataList = new ArrayList<>();
+        sampleNames = new HashSet<>();
+        sampleNamesToSexGenotypeDataMap = new HashMap<>();
     }
 
     /**
-     * Public constructor from a file.
+     * Public constructor from file.
      *
      * @param sexGenotypeDataFile sex genotype data file
      * @throws IOException if a read error occurs
      */
     public SexGenotypeDataCollection(@Nonnull final File sexGenotypeDataFile) throws IOException {
-        this(sexGenotypeDataFile.getAbsolutePath(), new FileReader(sexGenotypeDataFile));
+        this(new FileReader(sexGenotypeDataFile), sexGenotypeDataFile.getAbsolutePath());
     }
 
     /**
-     * Public constructor from a reader.
+     * Public constructor from abtract reader.
      *
      * @param sexGenotypeDataSourceName a string identifer for the reader
      * @param sexGenotypeDataReader an instance of {@link Reader}
      * @throws IOException if a read error occurs
      */
-    public SexGenotypeDataCollection(@Nonnull final String sexGenotypeDataSourceName,
-                                     @Nonnull final Reader sexGenotypeDataReader) throws IOException {
+    public SexGenotypeDataCollection(@Nonnull final Reader sexGenotypeDataReader,
+                                     @Nonnull final String sexGenotypeDataSourceName) throws IOException {
         try (final SexGenotypeTableReader reader = new SexGenotypeTableReader(sexGenotypeDataSourceName, sexGenotypeDataReader)) {
             sexGenotypeDataList = reader.stream().collect(Collectors.toList());
         } catch (final IOException ex) {
-            throw new UserException.CouldNotReadInputFile("Could not read sex genotype data from " + sexGenotypeDataSourceName);
+            throw new UserException.CouldNotReadInputFile("Could not reader sex genotype data from " + sexGenotypeDataSourceName);
         }
+        sampleNames = sexGenotypeDataList.stream().map(SexGenotypeData::getSampleName).collect(Collectors.toSet());
+        if (sampleNames.size() < sexGenotypeDataList.size()) {
+            throw new UserException.BadInput("Each sample must have a unique sex annotation");
+        }
+        sampleNamesToSexGenotypeDataMap = sexGenotypeDataList.stream()
+                .collect(Collectors.toMap(SexGenotypeData::getSampleName, Function.identity()));
     }
 
     /**
@@ -69,7 +77,7 @@ public final class SexGenotypeDataCollection {
      * @param dataWriter an instance of {@link Writer}
      */
     public void write(@Nonnull final Writer dataWriter) {
-        if (sexGenotypeDataList.isEmpty()) {
+        if (sexGenotypeDataList.size() == 0) {
             throw new IllegalStateException("The sex genotype data collection is empty");
         }
         /* check if extended genotyping information is available; first, check for nulls */
@@ -85,7 +93,7 @@ public final class SexGenotypeDataCollection {
             for (final SexGenotypeData dat : sexGenotypeDataList) {
                 commonGenotypes = Sets.intersection(commonGenotypes, dat.getSexGenotypesSet());
             }
-            if (commonGenotypes.isEmpty()) {
+            if (commonGenotypes.size() == 0) {
                 extended = false;
             }
         }
@@ -113,6 +121,19 @@ public final class SexGenotypeDataCollection {
      */
     public List<SexGenotypeData> getSexGenotypeDataList() {
         return sexGenotypeDataList;
+    }
+
+    /**
+     * Returns the {@link SexGenotypeData} for a given sample in the collection
+     *
+     * @param sampleName sample name string identifier
+     * @return the corresponding {@link SexGenotypeData}
+     */
+    public SexGenotypeData getSampleSexGenotypeData(@Nonnull final String sampleName) {
+        if (!sampleNames.contains(sampleName)) {
+            throw new UserException.BadInput("Sample name \"" + sampleName + "\" is not in the collection");
+        }
+        return sampleNamesToSexGenotypeDataMap.get(sampleName);
     }
 
     /**

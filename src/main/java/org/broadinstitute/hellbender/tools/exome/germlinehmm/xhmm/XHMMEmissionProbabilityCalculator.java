@@ -1,7 +1,8 @@
-package org.broadinstitute.hellbender.tools.coveragemodel;
+package org.broadinstitute.hellbender.tools.exome.germlinehmm.xhmm;
 
 import org.apache.commons.math3.distribution.NormalDistribution;
 import org.apache.commons.math3.random.RandomGenerator;
+import org.broadinstitute.hellbender.tools.coveragemodel.TargetLikelihoodCalculator;
 import org.broadinstitute.hellbender.tools.exome.Target;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriState;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.xhmm.XHMMEmissionData;

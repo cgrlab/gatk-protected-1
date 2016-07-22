@@ -324,7 +324,7 @@ public final class HMMUnitTest extends BaseTest {
        final List<Integer> data = Collections.nCopies(length, -1); // data is irrelevant for this model.
        final ForwardBackwardAlgorithm.Result<Integer, Integer, Integer> fbResult =
                ForwardBackwardAlgorithm.apply(data, positions, model);
-       final List<Integer> states = model.hiddenStates();
+       final List<Integer> states = model.getHiddenStates();
        Assert.assertEquals(states.size(), numStates);
        final List<Integer> nextPath = new ArrayList<>(Collections.nCopies(length, states.get(0)));
        final int numPaths = (int) Math.pow(numStates, length);
@@ -353,7 +353,7 @@ public final class HMMUnitTest extends BaseTest {
         final HiddenMarkovModel<Integer, Integer, Integer> model = new HeavyStateTestHMModel(numStates, heavyState, heavyStateWeight);
         final List<Integer> positions = IntStream.range(0, length).boxed().collect(Collectors.toList());
         final List<Integer> data = Collections.nCopies(length, -1); // data is irrelevant for this model.
-        final List<Integer> states = model.hiddenStates();
+        final List<Integer> states = model.getHiddenStates();
         Assert.assertEquals(states.size(), numStates);
 
         // Checking the Viterbi algorithm behavior:

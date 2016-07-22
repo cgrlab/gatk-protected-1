@@ -1,0 +1,394 @@
+package org.broadinstitute.hellbender.tools.coveragemodel;
+
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.tools.exome.*;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
+import org.broadinstitute.hellbender.utils.SimpleInterval;
+import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.tsv.DataLine;
+import org.broadinstitute.hellbender.utils.tsv.TableColumnCollection;
+import org.broadinstitute.hellbender.utils.tsv.TableWriter;
+
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.Writer;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+/**
+ * This abstract class provides the basic workspace structure for {@link CoverageModelEMAlgorithm},
+ * Explicit implementations may use local or distributed memory allocation and computation.
+ *
+ * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
+ */
+
+public abstract class CoverageModelEMWorkspace<V, M> {
+
+    private final Logger logger = LogManager.getLogger(CoverageModelEMWorkspace.class);
+
+    protected final CoverageModelEMParams params;
+
+    protected final ReadCountCollection processedReadCounts;
+
+    protected final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData> copyRatioPosteriorCalculator;
+
+    /* useful elements to fetch from the processed read count collection */
+    protected final List<Target> processedTargetList;
+    protected final Map<Target, Integer> processedTargetIndexMap;
+    protected final List<String> processedSampleList;
+
+    protected final CoverageModelParametersNDArray processedModel;
+
+    /**
+     * List of sample germline ploidies in the same order as {@code processedSampleList}
+     */
+    protected final List<int[]> sampleGermlinePloidies;
+
+    protected final int numSamples, numTargets, numLatents;
+
+    /**
+     * Basic constructor -- does the following jobs:
+     *
+     * <dl>
+     *     <dt> processes the raw read counts and populates {@code processedReadCounts} </dt>
+     *     <dt> fetches the target germline ploidy for each sample </dt>
+     * </dl>
+     *
+     * @param rawReadCounts not {@code null} instance of {@link ReadCountCollection}
+     * @param ploidyAnnots an instance of {@link PloidyAnnotatedTargetCollection} for obtaining target ploidies
+     *                     for different sex genotypes
+     * @param sexGenotypeData an instance of {@link SexGenotypeDataCollection} for obtaining sample sex genotypes
+     * @param copyRatioPosteriorCalculator an implementation of {@link CopyRatioPosteriorCalculator} for obtaining copy ratio posterios
+     * @param params not {@code null} instance of {@link CoverageModelEMParams}
+     */
+    protected CoverageModelEMWorkspace(@Nonnull final ReadCountCollection rawReadCounts,
+                                       @Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots,
+                                       @Nonnull final SexGenotypeDataCollection sexGenotypeData,
+                                       @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData> copyRatioPosteriorCalculator,
+                                       @Nonnull final CoverageModelEMParams params,
+                                       @Nullable final CoverageModelParametersNDArray model) {
+        this.params = params;
+        this.copyRatioPosteriorCalculator = copyRatioPosteriorCalculator;
+
+        if (model != null) {
+            final ReadCountCollection intermediateReadCounts = processReadCountCollection(rawReadCounts, params, logger);
+            /* adapt model and read counts */
+            final ImmutablePair<CoverageModelParametersNDArray, ReadCountCollection> modelReadCountsPair =
+                CoverageModelParametersNDArray.adaptModelToReadCountCollection(model, intermediateReadCounts, logger);
+            processedModel = modelReadCountsPair.left;
+            processedReadCounts = modelReadCountsPair.right;
+            numLatents = processedModel.getNumLatents();
+            if (params.getNumLatents() != processedModel.getNumLatents()) {
+                logger.info("Changing number of latent variables to " + processedModel.getNumLatents() + " based" +
+                        " on the provided model; requested value was: " + params.getNumLatents());
+                params.setNumLatents(processedModel.getNumLatents());
+            }
+        } else {
+            processedModel = null;
+            processedReadCounts = processReadCountCollection(rawReadCounts, params, logger);
+            numLatents = params.getNumLatents();
+        }
+
+        /* ... and then populate these */
+        numSamples = processedReadCounts.columnNames().size();
+        numTargets = processedReadCounts.targets().size();
+        processedTargetList = processedReadCounts.targets();
+        processedSampleList = processedReadCounts.columnNames();
+        processedTargetIndexMap = new HashMap<>();
+        IntStream.range(0, numTargets).forEach(ti -> processedTargetIndexMap.put(processedTargetList.get(ti), ti));
+
+        /* populate sample germline ploidies */
+        sampleGermlinePloidies = Collections.unmodifiableList(
+                processedSampleList.stream().map(sampleName -> {
+                    final String sampleSexGenotypeIdentifier = sexGenotypeData.getSampleSexGenotypeData(sampleName).getSexGenotype();
+                    return processedTargetList.stream().map(t -> ploidyAnnots.getTargetPloidyByTag(t, sampleSexGenotypeIdentifier))
+                            .mapToInt(Integer::intValue).toArray();
+                }).collect(Collectors.toList()));
+
+        logger.info("Number of samples after filtering: " + numSamples);
+        logger.info("Number of targets after filtering: " + numTargets);
+    }
+
+    /**
+     * Process raw read counts and filter bad targets and/or samples:
+     *
+     * <dl>
+     *     <dt> Remove totally uncovered targets </dt>
+     * </dl>
+     *
+     * TODO add more filters?
+     *
+     * - remove targets with very high and very low GC content
+     * - remove targets with lots of repeats
+     * - remove targets that have extremely high or low coverage (not sure)
+     * -
+     *
+     * @param rawReadCounts raw read counts
+     * @return processed read counts
+     */
+    public static ReadCountCollection processReadCountCollection(@Nonnull final ReadCountCollection rawReadCounts,
+                                                                 @Nonnull final CoverageModelEMParams params,
+                                                                 @Nonnull final Logger logger) {
+        ReadCountCollection processedReadCounts;
+        processedReadCounts = ReadCountCollectionUtils.removeTotallyUncoveredTargets(rawReadCounts, logger);
+
+        return processedReadCounts;
+    }
+
+    /************
+     * acessors *
+     ************/
+
+    public int getNumSamples() { return numSamples; }
+
+    public int getNumTargets() { return numTargets; }
+
+    public abstract double getLogLikelihood();
+
+    public abstract double[] getLogLikelihoodPerSample();
+
+    public abstract V fetchTargetMeanBias();
+
+    public abstract V fetchTargetUnexplainedVariance();
+
+    public abstract M fetchPrincipalLatentToTargetMap();
+
+    public abstract M fetchViterbiResults(final boolean performViterbi);
+
+    public abstract ImmutablePair<M, M> fetchCopyRatioMaxLikelihoodResults();
+
+    public abstract V fetchSampleMeanLogReadDepths();
+
+    public abstract V fetchSampleVarLogReadDepths();
+
+    protected abstract double[] vectorToArray(final V vec);
+
+    protected abstract double[] getMatrixRow(final M mat, final int rowIndex);
+
+    protected abstract double[] getMatrixColumn(final M mat, final int colIndex);
+
+    /****************
+     * save to disk *
+     ****************/
+
+    public abstract void saveModel(final String outputPath);
+
+    public void savePosteriors(final String outputPath, final boolean performViterbi) {
+        /* create output directory if it doesn't exist */
+        createOutputPath(outputPath);
+
+        final List<String> sampleNames = processedReadCounts.columnNames();
+
+        /* write copy ratio MLE results to file */
+        final ImmutablePair<M, M> copyRatioMLEData = fetchCopyRatioMaxLikelihoodResults();
+
+        final File copyRatioMLEFile = new File(outputPath, "copy_ratio_MLE.tsv");
+        try (final TableWriter<TargetDoubleRecord> copyRatioRecordTableWriter = getTargetDoubleRecordTableWriter(new FileWriter(copyRatioMLEFile),
+                processedReadCounts.columnNames())) {
+            for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
+                copyRatioRecordTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
+                        getMatrixColumn(copyRatioMLEData.left, targetIndex)));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(copyRatioMLEFile, "Could not save copy ratio MLE results");
+        }
+
+        final File copyRatioPrecisionFile = new File(outputPath, "copy_ratio_precision.tsv");
+        try (final TableWriter<TargetDoubleRecord> copyRatioPrecisionRecordTableWriter = getTargetDoubleRecordTableWriter(new FileWriter(copyRatioPrecisionFile),
+                processedReadCounts.columnNames())) {
+            for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
+                copyRatioPrecisionRecordTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
+                        getMatrixColumn(copyRatioMLEData.right, targetIndex)));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(copyRatioPrecisionFile, "Could not save copy ratio precision results");
+        }
+
+        /* write read depth posteriors to file */
+        final File sampleReadDepthPosteriorsFile = new File(outputPath, "sample_read_depth_posteriors.tsv");
+        final double[] sampleMeanLogReadDepthsArray = vectorToArray(fetchSampleMeanLogReadDepths());
+        final double[] sampleVarLogReadDepthsArray = vectorToArray(fetchSampleVarLogReadDepths());
+        try (final TableWriter<SampleReadDepthPosteriorRecord> sampleReadDepthPosteriorsTableWriter =
+                     getSampleLogReadDepthTableWriter(new FileWriter(sampleReadDepthPosteriorsFile))) {
+            for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
+                sampleReadDepthPosteriorsTableWriter.writeRecord(new SampleReadDepthPosteriorRecord(sampleNames.get(sampleIndex),
+                        sampleMeanLogReadDepthsArray[sampleIndex], sampleVarLogReadDepthsArray[sampleIndex]));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(sampleReadDepthPosteriorsFile, "Could not save sample read depth posterior results");
+        }
+
+        /**
+         * copy ratio has to be the last thing because it changes the model
+         */
+
+        /* write log likelihood per sample to file */
+        final File sampleLogLikelihoodsFile = new File(outputPath, "sample_log_likelihoods.tsv");
+        final double[] sampleLogLikelihoods = getLogLikelihoodPerSample();
+        try (final TableWriter<SampleLogLikelihoodRecord> sampleLogLikelihoodRecordTableWriter =
+                     getSampleLogLikelihoodTableWriter(new FileWriter(sampleLogLikelihoodsFile))) {
+            for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
+                sampleLogLikelihoodRecordTableWriter.writeRecord(new SampleLogLikelihoodRecord(sampleNames.get(sampleIndex),
+                        sampleLogLikelihoods[sampleIndex]));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(sampleLogLikelihoodsFile, "Could not save sample log likelihood results");
+        }
+
+        if (performViterbi) {
+            /* write viterbi results to file */
+            final File viterbiResultsFile = new File(outputPath, "viterbi_results.tsv");
+            final M viterbiResultsMatrix = fetchViterbiResults(true);
+            try (final TableWriter<TargetDoubleRecord> viterbiRecordTableWriter = getTargetDoubleRecordTableWriter(new FileWriter(viterbiResultsFile),
+                    processedReadCounts.columnNames())) {
+                for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
+                    viterbiRecordTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
+                            getMatrixColumn(viterbiResultsMatrix, targetIndex)));
+                }
+            } catch (final IOException ex) {
+                throw new UserException.CouldNotCreateOutputFile(viterbiResultsFile, "Could not save Viterbi results");
+            }
+
+            /* write log likelihood per sample to file */
+            final File sampleLogLikelihoodsCRFile = new File(outputPath, "sample_log_likelihoods_after_CR.tsv");
+            final double[] sampleLogLikelihoodsCR = getLogLikelihoodPerSample();
+            try (final TableWriter<SampleLogLikelihoodRecord> sampleLogLikelihoodRecordTableWriter =
+                         getSampleLogLikelihoodTableWriter(new FileWriter(sampleLogLikelihoodsCRFile))) {
+                for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
+                    sampleLogLikelihoodRecordTableWriter.writeRecord(new SampleLogLikelihoodRecord(sampleNames.get(sampleIndex),
+                            sampleLogLikelihoodsCR[sampleIndex]));
+                }
+            } catch (final IOException ex) {
+                throw new UserException.CouldNotCreateOutputFile(sampleLogLikelihoodsFile, "Could not save sample log likelihood results");
+            }
+
+        }
+
+    }
+
+    private void createOutputPath(final String outputPath) {
+        final File outputPathFile = new File(outputPath);
+        if (!outputPathFile.exists()) {
+            if (!outputPathFile.mkdir()) {
+                throw new UserException.CouldNotCreateOutputFile(outputPathFile, "Could not create the output directory");
+            }
+        }
+    }
+
+    private static final class TargetDoubleRecord {
+        private final Target target;
+        private final double[] data;
+
+        public TargetDoubleRecord(final Target target, final double[] data) {
+            this.target = target;
+            this.data = data;
+        }
+
+        final Target getTarget() {
+            return target;
+        }
+
+        public void appendDataTo(final DataLine dataLine) {
+            Utils.nonNull(dataLine);
+            dataLine.append(data);
+        }
+    }
+
+    private static TableWriter<TargetDoubleRecord> getTargetDoubleRecordTableWriter(final Writer writer, final List<String> countColumnNames) throws IOException {
+        final List<String> columnNames = new ArrayList<>();
+
+        columnNames.add(TargetTableColumn.CONTIG.toString());
+        columnNames.add(TargetTableColumn.START.toString());
+        columnNames.add(TargetTableColumn.END.toString());
+        columnNames.add(TargetTableColumn.NAME.toString());
+        columnNames.addAll(Utils.nonNull(countColumnNames));
+        final TableColumnCollection columns = new TableColumnCollection(columnNames);
+
+        return new TableWriter<TargetDoubleRecord>(writer, columns) {
+            @Override
+            protected void composeLine(final TargetDoubleRecord record, final DataLine dataLine) {
+                final SimpleInterval interval = record.getTarget().getInterval();
+                if (interval == null) {
+                    throw new IllegalStateException("invalid combination of targets with and without intervals defined");
+                }
+                dataLine.append(interval.getContig())
+                        .append(interval.getStart())
+                        .append(interval.getEnd())
+                        .append(record.getTarget().getName());
+                record.appendDataTo(dataLine);
+            }
+        };
+    }
+
+    private static final class SampleReadDepthPosteriorRecord {
+        private final String sampleName;
+        private final double meanLogReadDepth;
+        private final double varLogReadDepth;
+
+        public SampleReadDepthPosteriorRecord(final String sampleName, final double meanLogReadDepth, final double varLogReadDepth) {
+            this.sampleName = sampleName;
+            this.meanLogReadDepth = meanLogReadDepth;
+            this.varLogReadDepth = varLogReadDepth;
+        }
+
+        public void composeDataLine(final DataLine dataLine) {
+            dataLine.append(sampleName);
+            dataLine.append(meanLogReadDepth);
+            dataLine.append(varLogReadDepth);
+        }
+    }
+
+    private static final class SampleLogLikelihoodRecord {
+        private final String sampleName;
+        private final double logLikelihood;
+
+        public SampleLogLikelihoodRecord(final String sampleName, final double logLikelihood) {
+            this.sampleName = sampleName;
+            this.logLikelihood = logLikelihood;
+        }
+
+        public void composeDataLine(final DataLine dataLine) {
+            dataLine.append(sampleName);
+            dataLine.append(logLikelihood);
+        }
+    }
+
+    private static TableWriter<SampleReadDepthPosteriorRecord> getSampleLogReadDepthTableWriter(final Writer writer) throws IOException {
+        final List<String> columnNames = new ArrayList<>();
+
+        columnNames.add("SAMPLE_NAME");
+        columnNames.add("MEAN_LOG_READ_DEPTH_POSTERIOR");
+        columnNames.add("VAR_LOG_READ_DEPTH_POSTERIOR");
+        final TableColumnCollection columns = new TableColumnCollection(columnNames);
+
+        return new TableWriter<SampleReadDepthPosteriorRecord>(writer, columns) {
+            @Override
+            protected void composeLine(final SampleReadDepthPosteriorRecord record, final DataLine dataLine) {
+                record.composeDataLine(dataLine);
+            }
+        };
+    }
+
+    private static TableWriter<SampleLogLikelihoodRecord> getSampleLogLikelihoodTableWriter(final Writer writer) throws IOException {
+        final List<String> columnNames = new ArrayList<>();
+
+        columnNames.add("SAMPLE_NAME");
+        columnNames.add("LOG_LIKELIHOOD");
+        final TableColumnCollection columns = new TableColumnCollection(columnNames);
+
+        return new TableWriter<SampleLogLikelihoodRecord>(writer, columns) {
+            @Override
+            protected void composeLine(final SampleLogLikelihoodRecord record, final DataLine dataLine) {
+                record.composeDataLine(dataLine);
+            }
+        };
+    }
+}

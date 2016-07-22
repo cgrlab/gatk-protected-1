@@ -320,8 +320,10 @@ public class AllelicCNV extends SparkCommandLineProgram {
             targetSegmentsWithUnfixedStarts = targetSegmentsWithCalls.stream().map(ModeledSegment::getSimpleInterval)
                     .collect(Collectors.toList());
         }
-        //fix up legacy target-segment start breakpoints (convert from target-end--target-end to target-start--target-end), if necessary
-        return SegmentUtils.fixLegacyTargetSegmentStarts(targetSegmentsWithUnfixedStarts, genome.getTargets());
+
+        return targetSegmentsWithUnfixedStarts;
+//        //fix up legacy target-segment start breakpoints (convert from target-end--target-end to target-start--target-end), if necessary
+//        return SegmentUtils.fixLegacyTargetSegmentStarts(targetSegmentsWithUnfixedStarts, genome.getTargets());
     }
 
     //segment SNPs using CBS on per-SNP MLE minor allele fraction iteratively until convergence

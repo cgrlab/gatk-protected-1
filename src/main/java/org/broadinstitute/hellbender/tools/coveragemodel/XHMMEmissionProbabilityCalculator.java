@@ -3,22 +3,23 @@ package org.broadinstitute.hellbender.tools.coveragemodel;
 import org.apache.commons.math3.distribution.NormalDistribution;
 import org.apache.commons.math3.random.RandomGenerator;
 import org.broadinstitute.hellbender.tools.exome.Target;
-import org.broadinstitute.hellbender.utils.hmm.CopyNumberTriState;
+import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriState;
+import org.broadinstitute.hellbender.tools.exome.germlinehmm.xhmm.XHMMEmissionData;
 
 /**
  * Implements the {@link TargetLikelihoodCalculator} interface for the original XHMM-based germline model.
  *
  * @author David Benjamin &lt;davidben@broadinstitute.org&gt;
  */
-public final class XHMMTargetLikelihoodCalculator implements TargetLikelihoodCalculator {
+public final class XHMMEmissionProbabilityCalculator implements TargetLikelihoodCalculator<XHMMEmissionData> {
     private final RandomGenerator rng;
     private final double emissionStandardDeviation;
     private final double deletionMean;
     private final double duplicationMean;
     private static final double NEUTRAL_MEAN = 0.0;
 
-    public XHMMTargetLikelihoodCalculator(final double deletionMean, final double duplicationMean, final double emissionStdDev,
-                                          final RandomGenerator rng) {
+    public XHMMEmissionProbabilityCalculator(final double deletionMean, final double duplicationMean, final double emissionStdDev,
+                                             final RandomGenerator rng) {
         this.rng = rng;
         this.emissionStandardDeviation = emissionStdDev;
         this.duplicationMean = duplicationMean;
@@ -26,8 +27,9 @@ public final class XHMMTargetLikelihoodCalculator implements TargetLikelihoodCal
     }
 
     @Override
-    public double logLikelihood(final Target target, final double copyRatio, double coverageZScore) {
-        return new NormalDistribution(rng, getEmissionMean(copyRatio), emissionStandardDeviation).logDensity(coverageZScore);
+    public double logLikelihood(final XHMMEmissionData emissionData, final double copyRatio, final Target target) {
+        return new NormalDistribution(rng, getEmissionMean(copyRatio), emissionStandardDeviation)
+                .logDensity(emissionData.getCoverageZScore());
     }
 
     private double getEmissionMean(final double copyRatio) {

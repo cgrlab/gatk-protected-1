@@ -42,7 +42,7 @@ public final class CopyRatioHiddenMarkovModel extends ClusteringGenomicHMM<Doubl
                                       final double memoryLength, final double logCoverageCauchyWidth) {
         super(log2CopyRatios, weights, memoryLength);
         this.logCoverageCauchyWidth = logCoverageCauchyWidth;
-        emissionDistributions = getHiddenStates().stream()
+        emissionDistributions = hiddenStates().stream()
                 .map(n -> new CauchyDistribution(log2CopyRatios[n], logCoverageCauchyWidth)).collect(Collectors.toList());
     }
 

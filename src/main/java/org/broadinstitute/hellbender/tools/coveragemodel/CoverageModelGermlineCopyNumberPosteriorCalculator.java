@@ -61,7 +61,7 @@ public class CoverageModelGermlineCopyNumberPosteriorCalculator implements
         final ForwardBackwardAlgorithm.Result<CoverageModelCopyRatioEmissionData, Target, CopyNumberTriState> result =
                 ForwardBackwardAlgorithm.apply(emissionData, activeTargets, triStateHMM);
 
-        final List<CopyNumberTriState> hiddenStates = triStateHMM.getHiddenStates();
+        final List<CopyNumberTriState> hiddenStates = triStateHMM.hiddenStates();
         final double[] hiddenStatesLogCopyRatios = hiddenStates.stream()
                 .mapToDouble(s -> FastMath.log(s.copyRatio)).toArray();
         final double[] hiddenStatesLogCopyRatiosSquared = Arrays.stream(hiddenStatesLogCopyRatios)
@@ -69,7 +69,7 @@ public class CoverageModelGermlineCopyNumberPosteriorCalculator implements
 
         /* TODO NaN should not happen -- investigate */
         final List<double[]> hiddenStateProbabilities = IntStream.range(0, activeTargets.size())
-                .mapToObj(ti -> triStateHMM.getHiddenStates().stream()
+                .mapToObj(ti -> triStateHMM.hiddenStates().stream()
                         .mapToDouble(s -> FastMath.exp(result.logProbability(ti, s)))
                         .toArray())
                 .collect(Collectors.toList());

@@ -32,7 +32,7 @@ public final class FlatRealTestHMModel implements HiddenMarkovModel<Integer,Inte
     }
 
     @Override
-    public List<Integer> getHiddenStates() {
+    public List<Integer> hiddenStates() {
         return IntStream.range(0, numStates).boxed().collect(Collectors.toList());
     }
 

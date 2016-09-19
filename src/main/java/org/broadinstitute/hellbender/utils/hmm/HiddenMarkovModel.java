@@ -54,7 +54,7 @@ public interface HiddenMarkovModel<D, T, S> {
      *
      * @return never {@code null} nor an empty list.
      */
-    List<S> getHiddenStates();
+    List<S> hiddenStates();
 
     /**
      * Returns the prior probability of an state.
@@ -118,7 +118,7 @@ public interface HiddenMarkovModel<D, T, S> {
 
     default List<S> generateHiddenStateChain(final List<T> positions) {
         final RandomGenerator rg = RandomGeneratorFactory.createRandomGenerator(new Random(RANDOM_SEED_FOR_CHAIN_GENERATION));
-        final List<S> hiddenStates = getHiddenStates();
+        final List<S> hiddenStates = hiddenStates();
         final List<S> result = new ArrayList<>(positions.size());
 
         final S initialState = GATKProtectedMathUtils.randomSelect(hiddenStates, s -> Math.exp(logPriorProbability(s, positions.get(0))), rg);

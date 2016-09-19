@@ -49,7 +49,7 @@ public abstract class ClusteringGenomicHMM<T> implements HiddenMarkovModel<T, Si
     }
 
     // The following methods implement the HiddenMarkovModel interface -------------------------------------------------
-    public List<Integer> getHiddenStates() {
+    public List<Integer> hiddenStates() {
         return IntStream.range(0, hiddenStateValues.length).boxed().collect(Collectors.toList());
     }
 

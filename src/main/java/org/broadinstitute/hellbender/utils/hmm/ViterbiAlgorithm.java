@@ -45,7 +45,7 @@ public final class ViterbiAlgorithm {
         }
 
         @SuppressWarnings("unchecked")
-        final S[] states = (S[]) model.getHiddenStates().stream().toArray(Object[]::new);
+        final S[] states = (S[]) model.hiddenStates().stream().toArray(Object[]::new);
         final int length = data.size();
         final int numStates = states.length;
 

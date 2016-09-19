@@ -21,7 +21,7 @@ public final class UninformativeTestHMModel implements HiddenMarkovModel<Integer
     }
 
     @Override
-    public List<Integer> getHiddenStates() {
+    public List<Integer> hiddenStates() {
         return IntStream.range(0, numStates).boxed().collect(Collectors.toList());
     }
 

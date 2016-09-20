@@ -31,37 +31,22 @@ public class CopyRatioPosteriorResults implements Serializable {
      */
     public static final double VAR_LOG_COPY_RATIO_ON_MISSING_TARGETS = 0.0;
 
-    /**
-     *
-     */
-    public static final double VITERBI_COPY_RATIO_ON_MISSING_TARGETS = 0.0;
-
     private final int[] activeTargetIndices;
     private final double[] logCopyRatioPosteriorMeans;
     private final double[] logCopyRatioPosteriorVariances;
-    private final double[] mostLikelyHiddenStateChain;
-    private final int numActiveTargets;
 
     /**
      *
      * @param activeTargetIndices
      * @param logCopyRatioPosteriorMeans
      * @param logCopyRatioPosteriorVariances
-     * @param mostLikelyHiddenStateChain
      */
     public CopyRatioPosteriorResults(@Nonnull final int[] activeTargetIndices,
                                      @Nonnull final double[] logCopyRatioPosteriorMeans,
-                                     @Nonnull final double[] logCopyRatioPosteriorVariances,
-                                     @Nullable final double[] mostLikelyHiddenStateChain) {
+                                     @Nonnull final double[] logCopyRatioPosteriorVariances) {
         this.activeTargetIndices = activeTargetIndices.clone();
         this.logCopyRatioPosteriorMeans = logCopyRatioPosteriorMeans.clone();
         this.logCopyRatioPosteriorVariances = logCopyRatioPosteriorVariances.clone();
-        if (mostLikelyHiddenStateChain == null) {
-            this.mostLikelyHiddenStateChain = null;
-        } else {
-            this.mostLikelyHiddenStateChain = mostLikelyHiddenStateChain.clone();
-        }
-        this.numActiveTargets = activeTargetIndices.length;
     }
 
     /**
@@ -88,19 +73,6 @@ public class CopyRatioPosteriorResults implements Serializable {
      */
     public double[] getLogCopyRatioPosteriorVariancesOnTargetBlock(@Nonnull final LinearSpaceBlock tb) {
         return fillMissingValuesOnTargetBlock(logCopyRatioPosteriorVariances, tb, VAR_LOG_COPY_RATIO_ON_MISSING_TARGETS);
-    }
-
-    /**
-     *
-     * @param tb
-     * @return
-     */
-    public double[] getMostLikelyHiddenStateChainOnTargetBlock(@Nonnull final LinearSpaceBlock tb) {
-        if (hasMostLikelyHiddenStateChainData()) {
-            return fillMissingValuesOnTargetBlock(mostLikelyHiddenStateChain, tb, VITERBI_COPY_RATIO_ON_MISSING_TARGETS);
-        } else {
-            return null;
-        }
     }
 
     /**
@@ -148,26 +120,6 @@ public class CopyRatioPosteriorResults implements Serializable {
      */
     public double[] getLogCopyRatioPosteriorVariancesOnActiveTargets() {
         return logCopyRatioPosteriorVariances;
-    }
-
-    /**
-     *
-     * @return
-     */
-    public double[] getMostLikelyHiddenStateChainOnActiveTargets() {
-        if (mostLikelyHiddenStateChain != null) {
-            return mostLikelyHiddenStateChain;
-        } else {
-            throw new IllegalStateException("The most likely chain of hidden states is not available.");
-        }
-    }
-
-    /**
-     *
-     * @return
-     */
-    public boolean hasMostLikelyHiddenStateChainData() {
-        return mostLikelyHiddenStateChain != null;
     }
 
 }

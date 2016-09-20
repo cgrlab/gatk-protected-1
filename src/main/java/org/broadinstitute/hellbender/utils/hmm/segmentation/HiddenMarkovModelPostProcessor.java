@@ -109,7 +109,7 @@ public class HiddenMarkovModelPostProcessor<D, S extends AlleleMetadataProvider 
      * Calculating variance posterior on long segments is time consuming; we assume hidden states become
      * independent if their separation is larger than the following value
      */
-    public static final double INDEPENDENT_TARGETS_SEPARATION_THRESHOLD = 1000;
+    public static final double INDEPENDENT_TARGETS_SEPARATION_THRESHOLD = 0;
 
     /**
      * Threshold used to determine best way to calculate log(1- exp(a))

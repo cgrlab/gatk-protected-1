@@ -123,7 +123,7 @@ public abstract class CoverageModelEMAlgorithm {
                 posteriorErrorNormBias = iterInfo.errorNorm;
 
                 if (updateCopyRatioPosteriors) {
-                    runRoutine(() -> updateCopyRatioLatentPosteriorExpectations(false), s -> "N/A", "E_STEP_C", iterInfo);
+                    runRoutine(this::updateCopyRatioLatentPosteriorExpectations, s -> "N/A", "E_STEP_C", iterInfo);
                     posteriorErrorNormCopyRatio = iterInfo.errorNorm;
                 }
 
@@ -240,7 +240,7 @@ public abstract class CoverageModelEMAlgorithm {
             posteriorErrorNormBias = iterInfo.errorNorm;
 
             if (updateCopyRatioPosteriors) {
-                runRoutine(() -> updateCopyRatioLatentPosteriorExpectations(false), s -> "N/A", "E_STEP_C", iterInfo);
+                runRoutine(this::updateCopyRatioLatentPosteriorExpectations, s -> "N/A", "E_STEP_C", iterInfo);
                 posteriorErrorNormCopyRatio = iterInfo.errorNorm;
             } else {
                 posteriorErrorNormCopyRatio = 0;
@@ -293,9 +293,8 @@ public abstract class CoverageModelEMAlgorithm {
 
     /**
      * E-step -- Update E[log(c_{st})] and E[log(c_{st})^2]
-     * @param performViterbi
      */
-    public abstract SubroutineSignal updateCopyRatioLatentPosteriorExpectations(final boolean performViterbi);
+    public abstract SubroutineSignal updateCopyRatioLatentPosteriorExpectations();
 
     /**
      * M-step -- Update mean bias vector "m"

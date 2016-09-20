@@ -9,8 +9,10 @@ import org.broadinstitute.hellbender.cmdline.*;
 import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGroup;
 import org.broadinstitute.hellbender.engine.spark.SparkContextFactory;
 import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPosteriorCalculator;
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollectionUtils;
+import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriState;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigPloidyAnnotationTableReader;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
@@ -338,7 +340,7 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
         }
 
         logger.info("Initializing the copy ratio posterior calculator...");
-        final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData> copyNumberPosteriorCalculator =
+        final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, CopyNumberTriState> copyNumberPosteriorCalculator =
                 new CoverageModelGermlineCopyNumberPosteriorCalculator(eventStartProbability, meanEventSize);
         copyNumberPosteriorCalculator.initializeCaches(readCounts.targets());
 
@@ -351,7 +353,7 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
         }
 
         logger.info("Initializing the EM algorithm workspace...");
-        final CoverageModelEMWorkspaceNDArraySparkToggle ws = new CoverageModelEMWorkspaceNDArraySparkToggle(
+        final CoverageModelEMWorkspaceNDArraySparkToggle<CopyNumberTriState> ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(
                 readCounts, ploidyAnnotatedTargetCollection, sexGenotypeDataCollection, copyNumberPosteriorCalculator,
                 params, model, targetSpacePartitions, ctx);
 
@@ -365,7 +367,7 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
         }
 
         logger.info("Saving posteriors to disk...");
-        ws.savePosteriors(outputPath, true);
+        ws.savePosteriors(CopyNumberTriState.NEUTRAL, outputPath, this.getCommandLine());
     }
 
     private Reader getReaderFromURI(@Nonnull final String inputURI) throws IOException {

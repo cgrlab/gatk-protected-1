@@ -31,8 +31,8 @@ public final class CoverageModelEMAlgorithmNDArraySparkToggle extends CoverageMo
     }
 
     @Override @EvaluatesRDD @UpdatesRDD @CachesRDD
-    public SubroutineSignal updateCopyRatioLatentPosteriorExpectations(final boolean performViterbi) {
-        return ws.updateCopyRatioLatentPosteriorExpectations(performViterbi);
+    public SubroutineSignal updateCopyRatioLatentPosteriorExpectations() {
+        return ws.updateCopyRatioLatentPosteriorExpectations();
     }
 
     @Override @EvaluatesRDD @UpdatesRDD @CachesRDD

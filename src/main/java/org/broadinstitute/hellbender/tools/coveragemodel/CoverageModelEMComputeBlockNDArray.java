@@ -316,7 +316,6 @@ public class CoverageModelEMComputeBlockNDArray {
      */
     public CoverageModelEMComputeBlockNDArray updateCopyRatioLatentPosteriors(@Nonnull final INDArray log_c_st,
                                                                               @Nonnull final INDArray var_log_c_st,
-                                                                              @Nullable final INDArray viterbi_c_st,
                                                                               final double admixingRatio) {
         final INDArray old_log_c_st = getINDArrayFromCache("log_c_st");
         final INDArray old_var_log_c_st = getINDArrayFromCache("var_log_c_st");
@@ -329,7 +328,6 @@ public class CoverageModelEMComputeBlockNDArray {
                 old_log_c_st.sub(admixed_log_c_st));
         return cloneWithUpdatedPrimitive("log_c_st", admixed_log_c_st)
                 .cloneWithUpdatedPrimitive("var_log_c_st", admixed_var_log_c_st)
-                .cloneWithUpdatedPrimitive("viterbi_c_st", viterbi_c_st)
                 .cloneWithUpdatedSignal(SubroutineSignal.builder().put("error_norm", errNormInfinity).build());
     }
 
@@ -739,10 +737,6 @@ public class CoverageModelEMComputeBlockNDArray {
                         new String[]{},
                         null, true)
                 .addComputableNode("var_log_c_st", /* var[log(c_{st})] */
-                        new String[]{},
-                        new String[]{},
-                        null, true)
-                .addComputableNode("viterbi_c_st", /* viterbi result for c_{st} */
                         new String[]{},
                         new String[]{},
                         null, true)

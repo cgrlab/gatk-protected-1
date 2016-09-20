@@ -1,17 +1,26 @@
 package org.broadinstitute.hellbender.tools.coveragemodel;
 
+import htsjdk.variant.variantcontext.writer.VariantContextWriter;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPosteriorCalculator;
 import org.broadinstitute.hellbender.tools.exome.*;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
+import org.broadinstitute.hellbender.utils.IntervalUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.AlleleMetadataProvider;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.CallStringProvider;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.ScalarProvider;
+import org.broadinstitute.hellbender.utils.hmm.segmentation.HiddenMarkovModelPostProcessor;
+import org.broadinstitute.hellbender.utils.hmm.segmentation.HiddenStateSegmentRecordWriter;
 import org.broadinstitute.hellbender.utils.tsv.DataLine;
 import org.broadinstitute.hellbender.utils.tsv.TableColumnCollection;
 import org.broadinstitute.hellbender.utils.tsv.TableWriter;
+import org.broadinstitute.hellbender.utils.variant.GATKVariantContextUtils;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -27,18 +36,22 @@ import java.util.stream.IntStream;
  * This abstract class provides the basic workspace structure for {@link CoverageModelEMAlgorithm},
  * Explicit implementations may use local or distributed memory allocation and computation.
  *
+ * @param <V> vector type
+ * @param <M> matrix type
+ * @param <S> copy ratio hidden state type
+ *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
 
-public abstract class CoverageModelEMWorkspace<V, M> {
+public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataProvider & CallStringProvider & ScalarProvider> {
 
-    private final Logger logger = LogManager.getLogger(CoverageModelEMWorkspace.class);
+    protected final Logger logger = LogManager.getLogger(CoverageModelEMWorkspace.class);
 
     protected final CoverageModelEMParams params;
 
     protected final ReadCountCollection processedReadCounts;
 
-    protected final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData> copyRatioPosteriorCalculator;
+    protected final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> copyRatioPosteriorCalculator;
 
     /* useful elements to fetch from the processed read count collection */
     protected final List<Target> processedTargetList;
@@ -55,7 +68,7 @@ public abstract class CoverageModelEMWorkspace<V, M> {
     protected final int numSamples, numTargets, numLatents;
 
     /**
-     * Basic constructor -- does the following jobs:
+     * Basic constructor -- does the following tasks:
      *
      * <dl>
      *     <dt> processes the raw read counts and populates {@code processedReadCounts} </dt>
@@ -72,14 +85,28 @@ public abstract class CoverageModelEMWorkspace<V, M> {
     protected CoverageModelEMWorkspace(@Nonnull final ReadCountCollection rawReadCounts,
                                        @Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots,
                                        @Nonnull final SexGenotypeDataCollection sexGenotypeData,
-                                       @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData> copyRatioPosteriorCalculator,
+                                       @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> copyRatioPosteriorCalculator,
                                        @Nonnull final CoverageModelEMParams params,
                                        @Nullable final CoverageModelParametersNDArray model) {
         this.params = params;
         this.copyRatioPosteriorCalculator = copyRatioPosteriorCalculator;
 
+        /* foremost check -- targets are lexicographically sorted */
+        final List<Target> originalTargetList = rawReadCounts.targets();
+        final ReadCountCollection targetSortedRawReadCounts;
+        if (!IntStream.range(0, originalTargetList.size()-1)
+                .allMatch(ti -> IntervalUtils.LEXICOGRAPHICAL_ORDER_COMPARATOR
+                        .compare(originalTargetList.get(ti + 1), originalTargetList.get(ti)) > 0)) {
+            final List<Target> sortedTargetList =  originalTargetList.stream()
+                    .sorted(IntervalUtils.LEXICOGRAPHICAL_ORDER_COMPARATOR).collect(Collectors.toList());
+            targetSortedRawReadCounts = rawReadCounts.arrangeTargets(sortedTargetList);
+        } else {
+            targetSortedRawReadCounts = rawReadCounts;
+        }
+
         if (model != null) {
-            final ReadCountCollection intermediateReadCounts = processReadCountCollection(rawReadCounts, params, logger);
+            final ReadCountCollection intermediateReadCounts = processReadCountCollection(targetSortedRawReadCounts,
+                    params, logger);
             /* adapt model and read counts */
             final ImmutablePair<CoverageModelParametersNDArray, ReadCountCollection> modelReadCountsPair =
                 CoverageModelParametersNDArray.adaptModelToReadCountCollection(model, intermediateReadCounts, logger);
@@ -93,7 +120,7 @@ public abstract class CoverageModelEMWorkspace<V, M> {
             }
         } else {
             processedModel = null;
-            processedReadCounts = processReadCountCollection(rawReadCounts, params, logger);
+            processedReadCounts = processReadCountCollection(targetSortedRawReadCounts, params, logger);
             numLatents = params.getNumLatents();
         }
 
@@ -161,8 +188,6 @@ public abstract class CoverageModelEMWorkspace<V, M> {
 
     public abstract M fetchPrincipalLatentToTargetMap();
 
-    public abstract M fetchViterbiResults(final boolean performViterbi);
-
     public abstract ImmutablePair<M, M> fetchCopyRatioMaxLikelihoodResults();
 
     public abstract V fetchSampleMeanLogReadDepths();
@@ -175,13 +200,15 @@ public abstract class CoverageModelEMWorkspace<V, M> {
 
     protected abstract double[] getMatrixColumn(final M mat, final int colIndex);
 
+    protected abstract List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> getCopyRatioHiddenMarkovModelResults();
+
     /****************
      * save to disk *
      ****************/
 
     public abstract void saveModel(final String outputPath);
 
-    public void savePosteriors(final String outputPath, final boolean performViterbi) {
+    public void savePosteriors(final S refrenceState, final String outputPath, @Nullable final String commandLine) {
         /* create output directory if it doesn't exist */
         createOutputPath(outputPath);
 
@@ -226,10 +253,6 @@ public abstract class CoverageModelEMWorkspace<V, M> {
             throw new UserException.CouldNotCreateOutputFile(sampleReadDepthPosteriorsFile, "Could not save sample read depth posterior results");
         }
 
-        /**
-         * copy ratio has to be the last thing because it changes the model
-         */
-
         /* write log likelihood per sample to file */
         final File sampleLogLikelihoodsFile = new File(outputPath, "sample_log_likelihoods.tsv");
         final double[] sampleLogLikelihoods = getLogLikelihoodPerSample();
@@ -243,35 +266,32 @@ public abstract class CoverageModelEMWorkspace<V, M> {
             throw new UserException.CouldNotCreateOutputFile(sampleLogLikelihoodsFile, "Could not save sample log likelihood results");
         }
 
-        if (performViterbi) {
-            /* write viterbi results to file */
-            final File viterbiResultsFile = new File(outputPath, "viterbi_results.tsv");
-            final M viterbiResultsMatrix = fetchViterbiResults(true);
-            try (final TableWriter<TargetDoubleRecord> viterbiRecordTableWriter = getTargetDoubleRecordTableWriter(new FileWriter(viterbiResultsFile),
-                    processedReadCounts.columnNames())) {
-                for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
-                    viterbiRecordTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
-                            getMatrixColumn(viterbiResultsMatrix, targetIndex)));
-                }
-            } catch (final IOException ex) {
-                throw new UserException.CouldNotCreateOutputFile(viterbiResultsFile, "Could not save Viterbi results");
-            }
+        /* segmentation, vcf creation */
+        final List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> copyRatioHMMResult =
+                getCopyRatioHiddenMarkovModelResults();
+        final HiddenMarkovModelPostProcessor<CoverageModelCopyRatioEmissionData, S, Target> copyRatioProcessor =
+                new HiddenMarkovModelPostProcessor<>(
+                        sampleNames,
+                        copyRatioHMMResult.stream()
+                                .map(CopyRatioHiddenMarkovModelResults::getTargetCollection)
+                                .collect(Collectors.toList()),
+                        copyRatioHMMResult.stream()
+                                .map(CopyRatioHiddenMarkovModelResults::getForwardBackwardResult)
+                                .collect(Collectors.toList()),
+                        copyRatioHMMResult.stream()
+                                .map(CopyRatioHiddenMarkovModelResults::getViterbiResult)
+                                .collect(Collectors.toList()),
+                        refrenceState);
 
-            /* write log likelihood per sample to file */
-            final File sampleLogLikelihoodsCRFile = new File(outputPath, "sample_log_likelihoods_after_CR.tsv");
-            final double[] sampleLogLikelihoodsCR = getLogLikelihoodPerSample();
-            try (final TableWriter<SampleLogLikelihoodRecord> sampleLogLikelihoodRecordTableWriter =
-                         getSampleLogLikelihoodTableWriter(new FileWriter(sampleLogLikelihoodsCRFile))) {
-                for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
-                    sampleLogLikelihoodRecordTableWriter.writeRecord(new SampleLogLikelihoodRecord(sampleNames.get(sampleIndex),
-                            sampleLogLikelihoodsCR[sampleIndex]));
-                }
-            } catch (final IOException ex) {
-                throw new UserException.CouldNotCreateOutputFile(sampleLogLikelihoodsFile, "Could not save sample log likelihood results");
-            }
-
+        final File segmentsFile = new File(outputPath, "copy_ratio_segments.seg");
+        final File vcfFile = new File(outputPath, "copy_ratio_genotypes.vcf");
+        try (final HiddenStateSegmentRecordWriter<S, Target> segWriter = new HiddenStateSegmentRecordWriter<>(segmentsFile);
+             final VariantContextWriter VCFWriter  = GATKVariantContextUtils.createVCFWriter(vcfFile, null, false)) {
+            copyRatioProcessor.writeSegmentsToTableWriter(segWriter);
+            copyRatioProcessor.writeVariantsToVCFWriter(VCFWriter, "CNV", commandLine);
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(segmentsFile, "Could not create copy ratio segments file");
         }
-
     }
 
     private void createOutputPath(final String outputPath) {

@@ -1,4 +1,4 @@
-package org.broadinstitute.hellbender.tools.coveragemodel;
+package org.broadinstitute.hellbender.tools.coveragemodel.interfaces;
 
 import org.broadinstitute.hellbender.tools.exome.Target;
 

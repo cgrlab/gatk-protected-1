@@ -9,13 +9,7 @@ import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.analysis.solvers.BrentSolver;
 import org.apache.commons.math3.exception.NoBracketingException;
 import org.apache.commons.math3.exception.TooManyEvaluationsException;
-import org.apache.commons.math3.linear.EigenDecomposition;
-import org.apache.commons.math3.linear.MatrixUtils;
-import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.util.FastMath;
-import org.apache.commons.math3.util.Precision;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.apache.spark.HashPartitioner;
 import org.apache.spark.Partitioner;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -28,6 +22,7 @@ import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.CachesRDD;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.EvaluatesRDD;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.UpdatesRDD;
+import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPosteriorCalculator;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.FourierLinearOperator;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.FourierLinearOperatorNDArray;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.GeneralLinearOperator;
@@ -38,6 +33,9 @@ import org.broadinstitute.hellbender.tools.exome.ReadCountRecord;
 import org.broadinstitute.hellbender.tools.exome.Target;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.AlleleMetadataProvider;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.CallStringProvider;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.ScalarProvider;
 import org.broadinstitute.hellbender.utils.param.ParamUtils;
 import org.nd4j.linalg.api.buffer.DataBuffer;
 import org.nd4j.linalg.api.buffer.util.DataTypeUtil;
@@ -59,12 +57,13 @@ import static org.broadinstitute.hellbender.tools.coveragemodel.CoverageModelEMP
 /**
  * This class implements a local memory version of {@link CoverageModelEMWorkspace}
  *
+ * @param <S> hidden state type
+ *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
 
-public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageModelEMWorkspace<INDArray, INDArray> {
-
-    private final Logger logger = LogManager.getLogger(CoverageModelEMWorkspaceNDArraySparkToggle.class);
+public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMetadataProvider & CallStringProvider &
+        ScalarProvider> extends CoverageModelEMWorkspace<INDArray, INDArray, S> {
 
     /**
      * Targets with zero read count will be promoted to the following -- this value is arbitrary and immaterial
@@ -149,7 +148,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
     public CoverageModelEMWorkspaceNDArraySparkToggle(@Nonnull final ReadCountCollection rawReadCounts,
                                                       @Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots,
                                                       @Nonnull final SexGenotypeDataCollection sexGenotypeData,
-                                                      @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData> copyRatioPosteriorCalculator,
+                                                      @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> copyRatioPosteriorCalculator,
                                                       @Nonnull final CoverageModelEMParams params,
                                                       @Nullable final CoverageModelParametersNDArray model,
                                                       final int numTargetBlocks,
@@ -559,7 +558,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
     }
 
     @EvaluatesRDD @UpdatesRDD @CachesRDD
-    public SubroutineSignal updateCopyRatioLatentPosteriorExpectations(final boolean performViterbi) {
+    public SubroutineSignal updateCopyRatioLatentPosteriorExpectations() {
         mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("E_STEP_C"));
         cacheWorkers("after E-step for copy ratio initialization");
 
@@ -569,52 +568,65 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
         final SubroutineSignal sig;
         if (params.getCopyRatioHMMType().equals(COPY_RATIO_HMM_LOCAL) || !sparkContextIsAvailable) {
             /* local mode */
-            sig = updateCopyRatioLatentPosteriorExpectationsLocal(performViterbi);
+            sig = updateCopyRatioLatentPosteriorExpectationsLocal();
         } else {
             /* spark mode */
-            sig = updateCopyRatioLatentPosteriorExpectationsSpark(performViterbi);
+            sig = updateCopyRatioLatentPosteriorExpectationsSpark();
         }
         long endTime = System.nanoTime();
         logger.debug("Copy ratio posteriors calculation time: " + (double)(endTime - startTime)/1000000 + " ms");
         return sig;
     }
 
+    @Override @EvaluatesRDD @UpdatesRDD @CachesRDD
+    public List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> getCopyRatioHiddenMarkovModelResults() {
+        mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("E_STEP_C"));
+        cacheWorkers("after E-step for copy ratio HMM result generation");
+        final List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> result;
+        /* calculate posteriors */
+        logger.debug("Copy ratio HMM type: " + params.getCopyRatioHMMType().name());
+        long startTime = System.nanoTime();
+        if (params.getCopyRatioHMMType().equals(COPY_RATIO_HMM_LOCAL) || !sparkContextIsAvailable) {
+            /* local mode */
+            result = getCopyRatioHiddenMarkovModelResultsLocal();
+        } else {
+            /* spark mode */
+            result = getCopyRatioHiddenMarkovModelResultsSpark();
+        }
+        long endTime = System.nanoTime();
+        logger.debug("Copy ratio HMM result genereation time: " + (double)(endTime - startTime)/1000000 + " ms");
+        return result;
+    }
+
     /******************************************
      * Local copy ratio posterior calculation *
      ******************************************/
 
-    public SubroutineSignal updateCopyRatioLatentPosteriorExpectationsLocal(final boolean performViterbi) {
+    public SubroutineSignal updateCopyRatioLatentPosteriorExpectationsLocal() {
 
-        /* get copy ratio posterior results from workers */
-        final List<CopyRatioPosteriorResults> copyRatioPosteriorResults =
-                calculateCopyRatioPosteriorsLocal(performViterbi);
+        /* step 1. fetch copy ratio emission data */
+        final List<ImmutableTriple<List<Target>, int[], List<CoverageModelCopyRatioEmissionData>>> copyRatioEmissionData =
+                fetchCopyRatioEmissionDataLocal();
+
+        /* step 2. run the forward-backward algorithm and calculate copy ratio posteriors */
+        final List<CopyRatioPosteriorResults> copyRatioPosteriorResults = copyRatioEmissionData.stream()
+                .map(p -> copyRatioPosteriorCalculator.getCopyRatioPosteriorResults(p.left, p.middle, p.right))
+                .collect(Collectors.toList());
 
         /* sent the results back to workers */
-        final ImmutableTriple<INDArray, INDArray, INDArray> copyRatioPosteriorDataTriple =
-                convertCopyRatioLatentPosteriorExpectationsToNDArray(copyRatioPosteriorResults,
-                        performViterbi);
-        final INDArray log_c_st = copyRatioPosteriorDataTriple.left;
-        final INDArray var_log_c_st = copyRatioPosteriorDataTriple.middle;
-        final INDArray viterbi_c_st = copyRatioPosteriorDataTriple.right;
+        final ImmutablePair<INDArray, INDArray> copyRatioPosteriorDataPair =
+                convertCopyRatioLatentPosteriorExpectationsToNDArray(copyRatioPosteriorResults);
+        final INDArray log_c_st = copyRatioPosteriorDataPair.left;
+        final INDArray var_log_c_st = copyRatioPosteriorDataPair.right;
 
         final double meanFieldAdmixingRatio = params.getMeanFieldAdmixingRatio();
 
         /* partition the pair of (log_c_st, var_log_c_st), sent the result to workers via broadcast-hash-map */
-        if (performViterbi) {
-            pushToWorkers(mapINDArrayTripleToBlocks(log_c_st.transpose(), var_log_c_st.transpose(), viterbi_c_st.transpose()),
-                    (p, cb) -> cb.updateCopyRatioLatentPosteriors(
-                            p.get(cb.getTargetSpaceBlock()).left.transpose(),
-                            p.get(cb.getTargetSpaceBlock()).middle.transpose(),
-                            p.get(cb.getTargetSpaceBlock()).right.transpose(),
-                            meanFieldAdmixingRatio));
-        } else {
-            pushToWorkers(mapINDArrayPairToBlocks(log_c_st.transpose(), var_log_c_st.transpose()),
-                    (p, cb) -> cb.updateCopyRatioLatentPosteriors(
-                            p.get(cb.getTargetSpaceBlock()).left.transpose(),
-                            p.get(cb.getTargetSpaceBlock()).right.transpose(),
-                            null,
-                            meanFieldAdmixingRatio));
-        }
+        pushToWorkers(mapINDArrayPairToBlocks(log_c_st.transpose(), var_log_c_st.transpose()),
+                (p, cb) -> cb.updateCopyRatioLatentPosteriors(
+                        p.get(cb.getTargetSpaceBlock()).left.transpose(),
+                        p.get(cb.getTargetSpaceBlock()).right.transpose(),
+                        meanFieldAdmixingRatio));
         cacheWorkers("after E-step for copy ratio update");
 
         /* collect subroutine signals */
@@ -631,54 +643,36 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
     }
 
     /**
-     *
-     * @param performViterbi
-     * @return
+     * Interrogates workers about copy ratio emission data and creates an RDD ready for throwing at a HMM
+     * @return a list containing the data required for running an HMM
      */
-    private List<CopyRatioPosteriorResults> calculateCopyRatioPosteriorsLocal(final boolean performViterbi) {
+    private List<ImmutableTriple<List<Target>, int[], List<CoverageModelCopyRatioEmissionData>>> fetchCopyRatioEmissionDataLocal() {
         /* fetch data from workers */
         final List<ImmutablePair<LinearSpaceBlock, List<List<CoverageModelCopyRatioEmissionData>>>> collectedCopyRatioData =
                 mapWorkersAndCollect(cb -> ImmutablePair.of(cb.getTargetSpaceBlock(), cb.getSampleCopyRatioLatentPosteriorData()));
-
-        /* assemble */
-        final List<ImmutableTriple<List<Target>, int[], List<CoverageModelCopyRatioEmissionData>>> assembledCopyRatioData =
-                IntStream.range(0, numSamples).parallel()
+        /* assemble and return */
+        return IntStream.range(0, numSamples).parallel()
                         .mapToObj(si -> assembleTargetCoverageCopyRatioEmissionDataList(
                                 collectedCopyRatioData.stream()
                                         .map(p -> ImmutablePair.of(p.getKey(), p.getValue().get(si)))
                                         .collect(Collectors.toList())))
                         .collect(Collectors.toList());
-
-        /* calculate posteriors */
-        return assembledCopyRatioData.stream()
-                .map(p -> copyRatioPosteriorCalculator.getCopyRatioPosteriorResults(p.left, p.middle, p.right,
-                        performViterbi))
-                .collect(Collectors.toList());
     }
-
 
     /**
      * Converts a list of copy ratio posterior expectation results into a triple of (log_c_st, var_log_c_st,
      * viterbi_c_st) to send back to workers
      *
-     * Note: on missing targets, log_c_st is set to 0.0 (neutral state), var_log_c_st is set to 0.0 (no variance),
-     * and viterbi_c_st is set to 1.0 (neutral state)
+     * Note: on missing targets, log_c_st is set to 0.0 (neutral state), var_log_c_st is set to 0.0 (no variance)
      *
      * @param copyRatioPosteriorResultsList a list of {@link CopyRatioPosteriorResults}
-     * @return a triple of (log_c_st, var_log_c_st, viterbi_c_st)
+     * @return a triple of (log_c_st, var_log_c_st)
      */
-    private ImmutableTriple<INDArray, INDArray, INDArray> convertCopyRatioLatentPosteriorExpectationsToNDArray(
-            @Nonnull final List<CopyRatioPosteriorResults> copyRatioPosteriorResultsList,
-            final boolean collectViterbiResults) {
+    private ImmutablePair<INDArray, INDArray> convertCopyRatioLatentPosteriorExpectationsToNDArray(
+            @Nonnull final List<CopyRatioPosteriorResults> copyRatioPosteriorResultsList) {
 
         final INDArray log_c_st = Nd4j.create(numSamples, numTargets);
         final INDArray var_log_c_st = Nd4j.create(numSamples, numTargets);
-        final INDArray viterbi_c_st;
-        if (collectViterbiResults) {
-            viterbi_c_st = Nd4j.ones(numSamples, numTargets);
-        } else {
-            viterbi_c_st = null;
-        }
 
         sampleIndexStream().forEach(si -> {
             final CopyRatioPosteriorResults res = copyRatioPosteriorResultsList.get(si);
@@ -688,13 +682,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
             var_log_c_st.getRow(si).assign(fillMissingTargets(res.getActiveTargetIndices(),
                     res.getLogCopyRatioPosteriorVariancesOnActiveTargets(),
                     CopyRatioPosteriorResults.VAR_LOG_COPY_RATIO_ON_MISSING_TARGETS));
-            if (collectViterbiResults) {
-                viterbi_c_st.getRow(si).assign(fillMissingTargets(res.getActiveTargetIndices(),
-                        res.getMostLikelyHiddenStateChainOnActiveTargets(),
-                        CopyRatioPosteriorResults.VITERBI_COPY_RATIO_ON_MISSING_TARGETS));
-            }
         });
-        return ImmutableTriple.of(log_c_st, var_log_c_st, viterbi_c_st);
+        return ImmutablePair.of(log_c_st, var_log_c_st);
     }
 
     /**
@@ -753,6 +742,18 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
         return ImmutableTriple.of(activeTargetList, activeTargetIndices, nonNullEmissionDataList);
     }
 
+    /**
+     *
+     * @return
+     */
+    private List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> getCopyRatioHiddenMarkovModelResultsLocal() {
+        final List<ImmutableTriple<List<Target>, int[], List<CoverageModelCopyRatioEmissionData>>> copyRatioEmissionData =
+                fetchCopyRatioEmissionDataLocal();
+        return copyRatioEmissionData.stream()
+                .map(p -> copyRatioPosteriorCalculator.getCopyRatioHiddenMarkovModelResults(p.left, p.right))
+                .collect(Collectors.toList());
+    }
+
     /******************************************
      * Spark copy ratio posterior calculation *
      ******************************************/
@@ -760,30 +761,76 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
     /**
      * Wall of functional code ahead, not for the faint hearted! ;)
      *
-     * For each partition, calculate copy ratio latent posterior data and perform a 1-to-numSamples flat map of each.
-     * The result is a {@code JavaPairRDD<Integer, Tuple2<LinearSpaceBlock, CoverageModelCopyRatioEmissionData>>}
-     * which is a 1-to-many PairRDD where the new key is the sample index and value is the emission data on different
-     * target blocks
-     *
-     * @param performViterbi
      * @return
      */
     @EvaluatesRDD @UpdatesRDD @CachesRDD
-    private SubroutineSignal updateCopyRatioLatentPosteriorExpectationsSpark(final boolean performViterbi) {
+    private SubroutineSignal updateCopyRatioLatentPosteriorExpectationsSpark() {
 
         /* local final member variables for lambda capture */
+        final List<LinearSpaceBlock> targetBlocks = new ArrayList<>();
+        targetBlocks.addAll(this.targetBlocks);
+        final int numTargetBlocks = targetBlocks.size();
+        final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> calculator =
+                this.copyRatioPosteriorCalculator;
+
+        /* step 1. make an RDD of copy ratio results */
+        final JavaPairRDD<Integer, CopyRatioPosteriorResults> copyRatioPosteriorResultsPairRDD =
+                fetchCopyRatioEmissionDataSpark().mapValues(p -> /* run the HMM on workers */
+                        calculator.getCopyRatioPosteriorResults(p.left, p.middle, p.right));
+
+        /* step 2. blockify in target space and repartition */
+        final JavaPairRDD<LinearSpaceBlock, ImmutablePair<INDArray, INDArray>>
+                blockifiedCopyRatioPosteriorResultsPairRDD = copyRatioPosteriorResultsPairRDD
+                .flatMapToPair(tuple -> targetBlocks.stream() /* flat map posterior results to values on target blocks + sample index */
+                        .map(tb -> new Tuple2<>(tb, new Tuple2<>(tuple._1, ImmutablePair.of(
+                                tuple._2.getLogCopyRatioPosteriorMeansOnTargetBlock(tb),
+                                tuple._2.getLogCopyRatioPosteriorVariancesOnTargetBlock(tb)))))
+                        .collect(Collectors.toList())
+                ).combineByKey( /* combine the 1-to-many map from target blocks to pieces to a 1-to-1 map and repartition */
+                        Collections::singletonList,
+                        (list, element) -> Stream.concat(list.stream(), Collections.singletonList(element).stream())
+                                .collect(Collectors.toList()), /* add an element to the list */
+                        (list1, list2) -> Stream.concat(list1.stream(), list2.stream()).collect(Collectors.toList()), /* concatenate two lists */
+                        new HashPartitioner(numTargetBlocks) /* repartition with respect to sample indices */
+                ).mapValues(list -> list.stream()
+                        .sorted((Lp, Rp) -> Lp._1 - Rp._1) /* sort by sample index */
+                        .map(p -> p._2) /* remove sample label */
+                        .map(t -> ImmutablePair.of(Nd4j.create(t.left), Nd4j.create(t.right))) /* convert double[] to INDArray */
+                        .collect(Collectors.toList())
+                ).mapValues(CoverageModelEMWorkspaceNDArraySparkToggle::stackCopyRatioPosteriorDataForAllSamples);
+
+        /* step 3. merge with computeRDD and update */
+        final double admixingRatio = params.getMeanFieldAdmixingRatio();
+        computeRDD = computeRDD.join(blockifiedCopyRatioPosteriorResultsPairRDD)
+                .mapValues(t -> t._1.updateCopyRatioLatentPosteriors(t._2.left, t._2.right, admixingRatio));
+        cacheWorkers("after E-step for copy ratio update");
+
+        /* collect subroutine signals */
+        final List<SubroutineSignal> sigs =
+                mapWorkersAndCollect(CoverageModelEMComputeBlockNDArray::getLatestMStepSignal);
+
+        final double errorNormInfinity = Collections.max(sigs.stream()
+                .map(sig -> sig.getDouble("error_norm"))
+                .collect(Collectors.toList()));
+
+        return SubroutineSignal.builder()
+                .put("error_norm", errorNormInfinity)
+                .build();
+    }
+
+    /**
+     * Interrogates workers about copy ratio emission data and creates an RDD ready for throwing at a HMM
+     * @return an RDD containing the data required for running an HMM
+     */
+    private JavaPairRDD<Integer, ImmutableTriple<List<Target>, int[],
+            List<CoverageModelCopyRatioEmissionData>>> fetchCopyRatioEmissionDataSpark() {
+
         final int numSamples = this.numSamples;
         final int numTargets = this.numTargets;
         final List<Target> processedTargetList = new ArrayList<>();
         processedTargetList.addAll(this.processedTargetList);
-        final List<LinearSpaceBlock> targetBlocks = new ArrayList<>();
-        targetBlocks.addAll(this.targetBlocks);
-        final int numTargetBlocks = targetBlocks.size();
-        final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData> calculator =
-                this.copyRatioPosteriorCalculator;
 
-        /* step 1. make an RDD of copy ratio results */
-        final JavaPairRDD<Integer, CopyRatioPosteriorResults> copyRatioPosteriorResultsPairRDD = computeRDD.flatMapToPair(tuple -> {
+        return computeRDD.flatMapToPair(tuple -> {
             final LinearSpaceBlock targetBlock = tuple._1;
             final CoverageModelEMComputeBlockNDArray computeBlock = tuple._2;
             final List<List<CoverageModelCopyRatioEmissionData>> emissionDataBlock =
@@ -813,50 +860,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
                         .toArray(),
                 emissionDataList.stream() /* (3) list of non-null emission data entries */
                         .filter(emissionDataEntry -> emissionDataEntry != null)
-                        .collect(Collectors.toList()))
-        ).mapValues(p -> /* run the HMM on workers */
-                calculator.getCopyRatioPosteriorResults(p.left, p.middle, p.right, performViterbi));
-
-        /* step 2. blockify in target space and repartition */
-        final JavaPairRDD<LinearSpaceBlock, ImmutableTriple<INDArray, INDArray, INDArray>>
-                blockifiedCopyRatioPosteriorResultsPairRDD = copyRatioPosteriorResultsPairRDD
-                .flatMapToPair(tuple -> targetBlocks.stream() /* flat map posterior results to values on target blocks + sample index */
-                        .map(tb -> new Tuple2<>(tb, new Tuple2<>(tuple._1, ImmutableTriple.of(
-                                tuple._2.getLogCopyRatioPosteriorMeansOnTargetBlock(tb),
-                                tuple._2.getLogCopyRatioPosteriorVariancesOnTargetBlock(tb),
-                                tuple._2.getMostLikelyHiddenStateChainOnTargetBlock(tb)))))
-                        .collect(Collectors.toList())
-                ).combineByKey( /* combine the 1-to-many map from target blocks to pieces to a 1-to-1 map and repartition */
-                        Collections::singletonList,
-                        (list, element) -> Stream.concat(list.stream(), Collections.singletonList(element).stream())
-                                .collect(Collectors.toList()), /* add an element to the list */
-                        (list1, list2) -> Stream.concat(list1.stream(), list2.stream()).collect(Collectors.toList()), /* concatenate two lists */
-                        new HashPartitioner(numTargetBlocks) /* repartition with respect to sample indices */
-                ).mapValues(list -> list.stream()
-                        .sorted((Lp, Rp) -> Lp._1 - Rp._1) /* sort by sample index */
-                        .map(p -> p._2) /* remove sample label */
-                        .map(t -> ImmutableTriple.of( /* convert double[] to INDArray */
-                                Nd4j.create(t.left), Nd4j.create(t.middle), performViterbi ? Nd4j.create(t.right) : null))
-                        .collect(Collectors.toList())
-                ).mapValues(perSampleData -> stackCopyRatioPosteriorDataForAllSamples(perSampleData, performViterbi));
-
-        /* step 3. merge with computeRDD and update */
-        final double admixingRatio = params.getMeanFieldAdmixingRatio();
-        computeRDD = computeRDD.join(blockifiedCopyRatioPosteriorResultsPairRDD)
-                .mapValues(t -> t._1.updateCopyRatioLatentPosteriors(t._2.left, t._2.middle, t._2.right, admixingRatio));
-        cacheWorkers("after E-step for copy ratio update");
-
-        /* collect subroutine signals */
-        final List<SubroutineSignal> sigs =
-                mapWorkersAndCollect(CoverageModelEMComputeBlockNDArray::getLatestMStepSignal);
-
-        final double errorNormInfinity = Collections.max(sigs.stream()
-                .map(sig -> sig.getDouble("error_norm"))
-                .collect(Collectors.toList()));
-
-        return SubroutineSignal.builder()
-                .put("error_norm", errorNormInfinity)
-                .build();
+                        .collect(Collectors.toList())));
     }
 
     /**
@@ -864,14 +868,27 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
      * @param perSampleData
      * @return
      */
-    private static ImmutableTriple<INDArray, INDArray, INDArray> stackCopyRatioPosteriorDataForAllSamples(
-            final List<ImmutableTriple<INDArray, INDArray, INDArray>> perSampleData, final boolean performViterbi) {
-        return ImmutableTriple.of(
-                Nd4j.vstack((Collection<INDArray>)perSampleData.stream().map(t -> t.left).collect(Collectors.toList())),
-                Nd4j.vstack((Collection<INDArray>)perSampleData.stream().map(t -> t.middle).collect(Collectors.toList())),
-                performViterbi ? Nd4j.vstack((Collection<INDArray>)perSampleData.stream().map(t -> t.right).collect(Collectors.toList())) : null);
+    private static ImmutablePair<INDArray, INDArray> stackCopyRatioPosteriorDataForAllSamples(
+            final List<ImmutablePair<INDArray, INDArray>> perSampleData) {
+        return ImmutablePair.of(
+                Nd4j.vstack((Collection<INDArray>)perSampleData.stream().map(p -> p.left).collect(Collectors.toList())),
+                Nd4j.vstack((Collection<INDArray>)perSampleData.stream().map(p -> p.right).collect(Collectors.toList())));
     }
 
+    /**
+     *
+     * @return
+     */
+    private List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> getCopyRatioHiddenMarkovModelResultsSpark() {
+        final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> calculator =
+                this.copyRatioPosteriorCalculator;
+        return fetchCopyRatioEmissionDataSpark().mapValues(t -> /* run the HMM on workers */
+                        calculator.getCopyRatioHiddenMarkovModelResults(t.left, t.right))
+                .collect().stream()
+                .sorted((Lp, Rp) -> Lp._1 - Rp._1)
+                .map(t -> t._2)
+                .collect(Collectors.toList());
+    }
 
     /**********
      * M-step *
@@ -1542,20 +1559,6 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle extends CoverageMo
     @Override
     public INDArray fetchPrincipalLatentToTargetMap() {
         return fetchFromWorkers("W_tl", 0);
-    }
-
-    @Override
-    public INDArray fetchViterbiResults(final boolean performViterbi) {
-        if (performViterbi) {
-            updateCopyRatioLatentPosteriorExpectations(true);
-        }
-        final INDArray viterbi_c_st = fetchFromWorkers("viterbi_c_st", 1);
-        if (viterbi_c_st == null) {
-            throw new IllegalStateException("Viterbi result is not available! run the method again and set " +
-                    "performViterbi to true.");
-        } else {
-            return viterbi_c_st;
-        }
     }
 
     @Override

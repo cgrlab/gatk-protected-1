@@ -2,6 +2,7 @@ package org.broadinstitute.hellbender.tools.coveragemodel;
 
 import org.apache.commons.math3.special.Erf;
 import org.apache.commons.math3.util.FastMath;
+import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.TargetLikelihoodCalculator;
 import org.broadinstitute.hellbender.tools.exome.Target;
 
 import javax.annotation.Nonnull;
@@ -15,6 +16,8 @@ public class CoverageModelCopyRatioEmissionProbabilityCalculator implements
         TargetLikelihoodCalculator<CoverageModelCopyRatioEmissionData>, Serializable {
 
     private static final long serialVersionUID = -6985799468753075235L;
+
+    private static final boolean CHECK_FOR_NANS = true;
 
     /**
      * Calculate the log emission probability. The parameter {@param target} is not used since
@@ -35,11 +38,12 @@ public class CoverageModelCopyRatioEmissionProbabilityCalculator implements
                 - FastMath.log(1 + Erf.erf((1 + lambda * mu) / FastMath.sqrt(2 * lambda)))
                 - 0.5 * lambda * FastMath.pow(emissionData.getLogReadCount() - mu, 2);
 
-        if (Double.isNaN(res) || Double.isInfinite(res)) {
-            throw new RuntimeException("Something went wrong while calculating the likelihood; the" +
-                    " emission data is: " + emissionData.toString());
-        } else {
-            return res;
+        if (CHECK_FOR_NANS) {
+            if (Double.isNaN(res) || Double.isInfinite(res)) {
+                throw new RuntimeException("Something went wrong while calculating the likelihood; the" +
+                        " emission data is: " + emissionData.toString());
+            }
         }
+        return res;
     }
 }

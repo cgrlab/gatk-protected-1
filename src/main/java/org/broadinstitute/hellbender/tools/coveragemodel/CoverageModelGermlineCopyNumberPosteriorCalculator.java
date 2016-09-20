@@ -2,6 +2,8 @@ package org.broadinstitute.hellbender.tools.coveragemodel;
 
 import org.apache.commons.math3.util.FastMath;
 import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPosteriorCalculator;
+import org.broadinstitute.hellbender.tools.exome.HashedListTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.Target;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriState;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriStateHiddenMarkovModel;
@@ -13,7 +15,6 @@ import javax.annotation.Nonnull;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -21,7 +22,7 @@ import java.util.stream.IntStream;
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
 public class CoverageModelGermlineCopyNumberPosteriorCalculator implements
-        CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData>, Serializable {
+        CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, CopyNumberTriState>, Serializable {
 
     private static final long serialVersionUID = -7155566973157829680L;
 
@@ -46,15 +47,13 @@ public class CoverageModelGermlineCopyNumberPosteriorCalculator implements
      *
      * @param activeTargets list of targets corresponding to the provided list of emission data
      * @param emissionData list of emission probability calculation data
-     * @param calculateMostLikelyHiddenStates calculate most likely hidden states or not
      * @return
      */
     @Override
     public CopyRatioPosteriorResults getCopyRatioPosteriorResults(
             @Nonnull final List<Target> activeTargets,
             @Nonnull final int[] activeTargetIndices,
-            @Nonnull final List<CoverageModelCopyRatioEmissionData> emissionData,
-            final boolean calculateMostLikelyHiddenStates) {
+            @Nonnull final List<CoverageModelCopyRatioEmissionData> emissionData) {
         verifyArgs(activeTargets, emissionData);
 
         /* run the forward-backward algorithm */
@@ -102,18 +101,19 @@ public class CoverageModelGermlineCopyNumberPosteriorCalculator implements
                             logCopyRatioPosteriorMeans[ti];
                 }).toArray();
 
-        final double[] mostLikelyHiddenStates;
-        if (calculateMostLikelyHiddenStates) {
-            mostLikelyHiddenStates = ViterbiAlgorithm.apply(emissionData, activeTargets, triStateHMM).stream()
-                    .mapToDouble(state -> state.copyRatio)
-                    .toArray();
-        } else {
-            mostLikelyHiddenStates = null;
-        }
-
-        return new CopyRatioPosteriorResults(activeTargetIndices, logCopyRatioPosteriorMeans, logCopyRatioPosteriorVariances,
-                mostLikelyHiddenStates);
+        return new CopyRatioPosteriorResults(activeTargetIndices, logCopyRatioPosteriorMeans, logCopyRatioPosteriorVariances);
     }
+
+    @Override
+    public CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData,
+            CopyNumberTriState> getCopyRatioHiddenMarkovModelResults(@Nonnull final List<Target> activeTargets,
+                                                                     @Nonnull final List<CoverageModelCopyRatioEmissionData> emissionData) {
+        final ForwardBackwardAlgorithm.Result<CoverageModelCopyRatioEmissionData, Target, CopyNumberTriState> fbResult =
+                ForwardBackwardAlgorithm.apply(emissionData, activeTargets, triStateHMM);
+        final List<CopyNumberTriState> viterbiResult = ViterbiAlgorithm.apply(emissionData, activeTargets, triStateHMM);
+        return new CopyRatioHiddenMarkovModelResults<>(new HashedListTargetCollection<>(activeTargets), fbResult, viterbiResult);
+    }
+
 
     /**
      * High level verification of input data

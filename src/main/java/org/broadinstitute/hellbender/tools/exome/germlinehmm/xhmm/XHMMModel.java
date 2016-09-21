@@ -40,6 +40,8 @@ import java.util.Random;
  */
 public final class XHMMModel extends CopyNumberTriStateHiddenMarkovModel<XHMMEmissionData> {
 
+    private static final long serialVersionUID = 2702812961362183203L;
+
     /**
     * The assumed stddev for likelihoods, regardless of copy number state.
     */

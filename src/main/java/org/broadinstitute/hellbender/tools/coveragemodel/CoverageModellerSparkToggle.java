@@ -357,7 +357,8 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
                 readCounts, ploidyAnnotatedTargetCollection, sexGenotypeDataCollection, copyNumberPosteriorCalculator,
                 params, model, targetSpacePartitions, ctx);
 
-        final CoverageModelEMAlgorithmNDArraySparkToggle algo = new CoverageModelEMAlgorithmNDArraySparkToggle(params, ws);
+        final CoverageModelEMAlgorithmNDArraySparkToggle<CopyNumberTriState> algo =
+                new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
         if (model == null) {
             algo.runExpectationMaximization(performCopyRatioPosteriorCalling);
             logger.info("Saving the model to disk...");

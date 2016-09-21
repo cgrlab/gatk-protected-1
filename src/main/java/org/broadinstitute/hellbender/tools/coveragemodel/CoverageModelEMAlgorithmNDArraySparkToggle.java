@@ -3,6 +3,9 @@ package org.broadinstitute.hellbender.tools.coveragemodel;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.CachesRDD;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.EvaluatesRDD;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.UpdatesRDD;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.AlleleMetadataProvider;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.CallStringProvider;
+import org.broadinstitute.hellbender.utils.hmm.interfaces.ScalarProvider;
 
 import javax.annotation.Nonnull;
 
@@ -10,12 +13,13 @@ import javax.annotation.Nonnull;
  *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
-public final class CoverageModelEMAlgorithmNDArraySparkToggle extends CoverageModelEMAlgorithm {
+public final class CoverageModelEMAlgorithmNDArraySparkToggle<S extends AlleleMetadataProvider & CallStringProvider &
+        ScalarProvider> extends CoverageModelEMAlgorithm {
 
-    private final CoverageModelEMWorkspaceNDArraySparkToggle ws;
+    private final CoverageModelEMWorkspaceNDArraySparkToggle<S> ws;
 
     public CoverageModelEMAlgorithmNDArraySparkToggle(@Nonnull final CoverageModelEMParams params,
-                                                      @Nonnull final CoverageModelEMWorkspaceNDArraySparkToggle ws) {
+                                                      @Nonnull final CoverageModelEMWorkspaceNDArraySparkToggle<S> ws) {
         super(params);
         this.ws = ws;
     }

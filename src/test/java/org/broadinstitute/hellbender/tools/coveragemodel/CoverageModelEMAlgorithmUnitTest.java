@@ -49,7 +49,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
 
     private static CoverageModelEMParams params;
     private static CoverageModelEMWorkspaceNDArraySparkToggle<CopyNumberTriState> ws;
-    private static CoverageModelEMAlgorithmNDArraySparkToggle algo;
+    private static CoverageModelEMAlgorithmNDArraySparkToggle<CopyNumberTriState> algo;
     private static SexGenotypeDataCollection sexGenotypeData;
     private static PloidyAnnotatedTargetCollection samePloidyAnnots, differentPloidyAnnots;
     private static CoverageModelGermlineCopyNumberPosteriorCalculator copyNumberPosteriorCalculator;
@@ -151,7 +151,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
         ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
                 sexGenotypeData, copyNumberPosteriorCalculator, params, null,
                 NUMBER_OF_PARTITIONS, ctx);
-        algo = new CoverageModelEMAlgorithmNDArraySparkToggle(params, ws);
+        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
         algo.runExpectationMaximization(true);
         ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
     }

@@ -454,8 +454,11 @@ public final class ForwardBackwardAlgorithm {
                             final HiddenMarkovModel<D, T, S> model,
                             final double[][] logForwardProbabilities,
                             final double[][] logBackwardProbabilities) {
-            this.data = Collections.unmodifiableList(new ArrayList<>(data));
-            this.positions = Collections.unmodifiableList(new ArrayList<>(positions));
+//            this.data = Collections.unmodifiableList(new ArrayList<>(data));
+//            this.positions = Collections.unmodifiableList(new ArrayList<>(positions));
+            /* TODO kryo barfs with unmodifiable collections */
+            this.data = new ArrayList<>(data);
+            this.positions = new ArrayList<>(positions);
             this.positionIndexRange = new IntRange(0, positions.size() - 1);
             this.model = model;
             this.positionIndex = composeIndexMap(this.positions);

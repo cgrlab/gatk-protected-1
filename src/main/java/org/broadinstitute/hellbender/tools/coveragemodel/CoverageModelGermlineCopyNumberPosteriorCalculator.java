@@ -111,7 +111,7 @@ public class CoverageModelGermlineCopyNumberPosteriorCalculator implements
         final ForwardBackwardAlgorithm.Result<CoverageModelCopyRatioEmissionData, Target, CopyNumberTriState> fbResult =
                 ForwardBackwardAlgorithm.apply(emissionData, activeTargets, triStateHMM);
         final List<CopyNumberTriState> viterbiResult = ViterbiAlgorithm.apply(emissionData, activeTargets, triStateHMM);
-        return new CopyRatioHiddenMarkovModelResults<>(new HashedListTargetCollection<>(activeTargets), fbResult, viterbiResult);
+        return new CopyRatioHiddenMarkovModelResults<>(activeTargets, fbResult, viterbiResult);
     }
 
 

@@ -273,7 +273,8 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
                 new HiddenMarkovModelPostProcessor<>(
                         sampleNames,
                         copyRatioHMMResult.stream()
-                                .map(CopyRatioHiddenMarkovModelResults::getTargetCollection)
+                                .map(CopyRatioHiddenMarkovModelResults::getTargetList)
+                                .map(HashedListTargetCollection::new)
                                 .collect(Collectors.toList()),
                         copyRatioHMMResult.stream()
                                 .map(CopyRatioHiddenMarkovModelResults::getForwardBackwardResult)

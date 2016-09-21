@@ -10,6 +10,7 @@ import org.apache.commons.math3.util.Pair;
 import org.broadinstitute.hellbender.utils.param.ParamUtils;
 
 import javax.annotation.Nonnull;
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -21,7 +22,10 @@ import java.util.stream.IntStream;
  * Extra MathUtils that should be moved to gatk-public
  * Created by davidben on 1/22/16.
  */
-public class GATKProtectedMathUtils {
+public class GATKProtectedMathUtils implements Serializable {
+
+    private static final long serialVersionUID = -7587940242569731513L;
+
     private GATKProtectedMathUtils() {
     }
 

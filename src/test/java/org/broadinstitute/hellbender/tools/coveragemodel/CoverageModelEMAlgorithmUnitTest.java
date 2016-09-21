@@ -1,6 +1,7 @@
 package org.broadinstitute.hellbender.tools.coveragemodel;
 
 import com.google.common.collect.ImmutableMap;
+import de.javakaffee.kryoserializers.*;
 import htsjdk.samtools.util.Log;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.broadinstitute.hellbender.engine.spark.SparkContextFactory;
@@ -20,6 +21,10 @@ import org.testng.annotations.Test;
 import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.InvocationHandler;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.GregorianCalendar;
 import java.util.Map;
 
 /**
@@ -52,6 +57,20 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
     private static final Map<String, String> nd4jSparkProperties = ImmutableMap.<String,String>builder()
             .put("spark.kryo.registrator", "org.broadinstitute.hellbender.tools.coveragemodel.nd4jutils.Nd4jRegistrator")
             .build();
+
+//    static {
+//        kryo.register( Arrays.asList( "" ).getClass(), new ArraysAsListSerializer() );
+//        kryo.register( Collections.EMPTY_LIST.getClass(), new CollectionsEmptyListSerializer() );
+//        kryo.register( Collections.EMPTY_MAP.getClass(), new CollectionsEmptyMapSerializer() );
+//        kryo.register( Collections.EMPTY_SET.getClass(), new CollectionsEmptySetSerializer() );
+//        kryo.register( Collections.singletonList( "" ).getClass(), new CollectionsSingletonListSerializer() );
+//        kryo.register( Collections.singleton( "" ).getClass(), new CollectionsSingletonSetSerializer() );
+//        kryo.register( Collections.singletonMap( "", "" ).getClass(), new CollectionsSingletonMapSerializer() );
+//        kryo.register( GregorianCalendar.class, new GregorianCalendarSerializer() );
+//        kryo.register( InvocationHandler.class, new JdkProxySerializer() );
+//        UnmodifiableCollectionsSerializer.registerSerializers( kryo );
+//        SynchronizedCollectionsSerializer.registerSerializers( kryo );
+//    }
 
     @BeforeSuite @Override
     public void setTestVerbosity(){
@@ -134,6 +153,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
                 NUMBER_OF_PARTITIONS, ctx);
         algo = new CoverageModelEMAlgorithmNDArraySparkToggle(params, ws);
         algo.runExpectationMaximization(true);
+        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
     }
 
     @DataProvider(name = "ploidyAnnotsDataProvider")

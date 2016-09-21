@@ -83,6 +83,7 @@ dependencies {
     compile 'com.github.wendykierp:JTransforms:3.1'
     compile 'org.nd4j:nd4j-native-platform:0.5.0'
     compile 'org.nd4j:nd4j-serde:0.5.0'
+    compile 'de.javakaffee:kryo-serializers:0.38'
 
     testCompile 'org.testng:testng:6.8.8'
 }

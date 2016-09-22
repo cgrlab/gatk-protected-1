@@ -279,6 +279,7 @@ public class HiddenMarkovModelPostProcessor<D, S extends AlleleMetadataProvider 
         }
         logger.info("Generating genotyping segments...");
         final List<GenotypingSegment> genotypingSegments = composeGenotypingSegments(allSegmentsBySampleName);
+        logger.info("Composing and writing variant contexts...");
         composeVariantContextAndWrite(genotypingSegments, outputWriter, variantPrefix, commandLine);
     }
 

@@ -141,8 +141,10 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
                             .mapToInt(Integer::intValue).toArray();
                 }).collect(Collectors.toList()));
 
-        logger.info("Number of samples after filtering: " + numSamples);
-        logger.info("Number of targets after filtering: " + numTargets);
+        logger.info(String.format("Number of samples before and after pre-processing read counts: (%d, %d)",
+                rawReadCounts.columnNames().size(), numSamples));
+        logger.info(String.format("Number of targets before and after pre-processing read counts: (%d, %d)",
+                rawReadCounts.targets().size(), getNumTargets()));
     }
 
     /**

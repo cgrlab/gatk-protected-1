@@ -137,8 +137,18 @@ public class CopyNumberTriStateTransitionProbabilityCache implements Serializabl
 
     /**
      * Wrapper for a {@link RealMatrix} that is indexed by the CopyNumberTriState enum
+     *
+     * TODO
+     *
+     * Note: this class is made public for Serialization issues. Otherwise, we get the following exception
+     * when running on GCS:
+     *
+     * java.lang.IllegalAccessException: Class com.twitter.chill.Instantiators$$anonfun$normalJava$1
+     * can not access a member of class org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriStateTransitionProbabilityCache
+     * $LogTransitionProbabilityMatrix with modifiers "public"
+     *
      */
-    private static class LogTransitionProbabilityMatrix implements Serializable {
+    public static class LogTransitionProbabilityMatrix implements Serializable {
 
         private static final long serialVersionUID = -9072224697693405187L;
 

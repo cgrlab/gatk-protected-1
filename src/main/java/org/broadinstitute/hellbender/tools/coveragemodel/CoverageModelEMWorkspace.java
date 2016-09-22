@@ -7,7 +7,8 @@ import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPosteriorCalculator;
 import org.broadinstitute.hellbender.tools.exome.*;
-import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigGermlinePloidyAnnotation;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
 import org.broadinstitute.hellbender.utils.IntervalUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
@@ -76,14 +77,14 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
      * </dl>
      *
      * @param rawReadCounts not {@code null} instance of {@link ReadCountCollection}
-     * @param ploidyAnnots an instance of {@link PloidyAnnotatedTargetCollection} for obtaining target ploidies
+     * @param ploidyAnnots an instance of {@link GermlinePloidyAnnotatedTargetCollection} for obtaining target ploidies
      *                     for different sex genotypes
      * @param sexGenotypeData an instance of {@link SexGenotypeDataCollection} for obtaining sample sex genotypes
      * @param copyRatioPosteriorCalculator an implementation of {@link CopyRatioPosteriorCalculator} for obtaining copy ratio posterios
      * @param params not {@code null} instance of {@link CoverageModelEMParams}
      */
     protected CoverageModelEMWorkspace(@Nonnull final ReadCountCollection rawReadCounts,
-                                       @Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots,
+                                       @Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots,
                                        @Nonnull final SexGenotypeDataCollection sexGenotypeData,
                                        @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> copyRatioPosteriorCalculator,
                                        @Nonnull final CoverageModelEMParams params,
@@ -136,7 +137,7 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         sampleGermlinePloidies = Collections.unmodifiableList(
                 processedSampleList.stream().map(sampleName -> {
                     final String sampleSexGenotypeIdentifier = sexGenotypeData.getSampleSexGenotypeData(sampleName).getSexGenotype();
-                    return processedTargetList.stream().map(t -> ploidyAnnots.getTargetPloidyByTag(t, sampleSexGenotypeIdentifier))
+                    return processedTargetList.stream().map(t -> ploidyAnnots.getTargetGermlinePloidyByGenotype(t, sampleSexGenotypeIdentifier))
                             .mapToInt(Integer::intValue).toArray();
                 }).collect(Collectors.toList()));
 

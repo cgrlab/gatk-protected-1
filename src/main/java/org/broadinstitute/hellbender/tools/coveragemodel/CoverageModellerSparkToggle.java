@@ -13,8 +13,8 @@ import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPos
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollectionUtils;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriState;
-import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigPloidyAnnotationTableReader;
-import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigGermlinePloidyAnnotationTableReader;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
 import org.broadinstitute.hellbender.utils.SparkToggleCommandLineProgram;
 import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
@@ -329,10 +329,10 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
         }
 
         logger.info("Parsing the input contig ploidy annotation table...");
-        final PloidyAnnotatedTargetCollection ploidyAnnotatedTargetCollection;
+        final GermlinePloidyAnnotatedTargetCollection ploidyAnnotatedTargetCollection;
         try (final Reader ploidyAnnotationsReader = getReaderFromURI(contigPloidyAnnotationsURI)) {
-            ploidyAnnotatedTargetCollection = new PloidyAnnotatedTargetCollection(ContigPloidyAnnotationTableReader
-                    .readContigPloidyAnnotationsFromReader(contigPloidyAnnotationsURI, ploidyAnnotationsReader),
+            ploidyAnnotatedTargetCollection = new GermlinePloidyAnnotatedTargetCollection(ContigGermlinePloidyAnnotationTableReader
+                    .readContigGermlinePloidyAnnotationsFromReader(contigPloidyAnnotationsURI, ploidyAnnotationsReader),
                     readCounts.targets());
         } catch (final IOException ex) {
             ex.printStackTrace();
@@ -362,7 +362,7 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
         if (model == null) {
             algo.runExpectationMaximization(performCopyRatioPosteriorCalling);
             logger.info("Saving the model to disk...");
-            ws.saveModel(outputPath);
+            ws.saveModel(new File(outputPath, "model").getAbsolutePath());
         } else {
             algo.runExpectation(performCopyRatioPosteriorCalling);
         }

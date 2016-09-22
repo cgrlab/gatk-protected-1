@@ -31,7 +31,8 @@ import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearS
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
 import org.broadinstitute.hellbender.tools.exome.ReadCountRecord;
 import org.broadinstitute.hellbender.tools.exome.Target;
-import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigGermlinePloidyAnnotation;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.AlleleMetadataProvider;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.CallStringProvider;
@@ -137,7 +138,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      * Public constructor
      *
      * @param rawReadCounts an instance of {@link ReadCountCollection} containing raw read counts
-     * @param ploidyAnnots an instance of {@link PloidyAnnotatedTargetCollection} for obtaining target ploidies
+     * @param ploidyAnnots an instance of {@link GermlinePloidyAnnotatedTargetCollection} for obtaining target ploidies
      *                     for different sex genotypes
      * @param sexGenotypeData an instance of {@link SexGenotypeDataCollection} for obtaining sample sex genotypes
      * @param params EM algorithm parameter oracle
@@ -146,7 +147,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      */
     @UpdatesRDD @CachesRDD @EvaluatesRDD
     public CoverageModelEMWorkspaceNDArraySparkToggle(@Nonnull final ReadCountCollection rawReadCounts,
-                                                      @Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots,
+                                                      @Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots,
                                                       @Nonnull final SexGenotypeDataCollection sexGenotypeData,
                                                       @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> copyRatioPosteriorCalculator,
                                                       @Nonnull final CoverageModelEMParams params,
@@ -1200,7 +1201,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      */
     @Override @EvaluatesRDD
     public double getLogLikelihood() {
-        return Arrays.stream(getLogLikelihoodPerSample()).reduce((a, b) -> a + b).getAsDouble() / numSamples;
+        return Arrays.stream(getLogLikelihoodPerSample()).reduce((a, b) -> a + b).orElse(Double.NaN) / numSamples;
     }
 
     /**

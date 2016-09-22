@@ -60,10 +60,10 @@ public class CoverageModelEMParams {
     private int maxEStepCycles = 10;
 
     /* when to start calculating copy ratio posteriors */
-    private double logLikelihoodTolThresholdCopyRatioCalling = 1e-3;
+    private double logLikelihoodTolThresholdCopyRatioCalling = 5e-2;
 
     /* use Fourier regularization or not */
-    private boolean useFourierRegularization = true;
+    private boolean useFourierRegularization = false;
 
     /* minimum length of CNV event (for regularization) */
     private int minCNVLength = 10;

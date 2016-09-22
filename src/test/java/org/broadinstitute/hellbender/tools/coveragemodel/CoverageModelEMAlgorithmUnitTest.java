@@ -1,15 +1,14 @@
 package org.broadinstitute.hellbender.tools.coveragemodel;
 
 import com.google.common.collect.ImmutableMap;
-import de.javakaffee.kryoserializers.*;
 import htsjdk.samtools.util.Log;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.broadinstitute.hellbender.engine.spark.SparkContextFactory;
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollectionUtils;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriState;
-import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigPloidyAnnotationTableReader;
-import org.broadinstitute.hellbender.tools.exome.sexgenotyper.PloidyAnnotatedTargetCollection;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigGermlinePloidyAnnotationTableReader;
+import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
 import org.broadinstitute.hellbender.utils.LoggingUtils;
 import org.broadinstitute.hellbender.utils.test.BaseTest;
@@ -21,10 +20,6 @@ import org.testng.annotations.Test;
 import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationHandler;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.GregorianCalendar;
 import java.util.Map;
 
 /**
@@ -51,7 +46,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
     private static CoverageModelEMWorkspaceNDArraySparkToggle<CopyNumberTriState> ws;
     private static CoverageModelEMAlgorithmNDArraySparkToggle<CopyNumberTriState> algo;
     private static SexGenotypeDataCollection sexGenotypeData;
-    private static PloidyAnnotatedTargetCollection samePloidyAnnots, differentPloidyAnnots;
+    private static GermlinePloidyAnnotatedTargetCollection samePloidyAnnots, differentPloidyAnnots;
     private static CoverageModelGermlineCopyNumberPosteriorCalculator copyNumberPosteriorCalculator;
 
     private static final Map<String, String> nd4jSparkProperties = ImmutableMap.<String,String>builder()
@@ -81,11 +76,11 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
     public static void init() throws IOException {
         testReadCounts = ReadCountCollectionUtils.parse(TEST_RCC_FILE);
         sexGenotypeData = new SexGenotypeDataCollection(TEST_SAMPLE_SEX_GENOTYPES_FILE);
-        samePloidyAnnots = new PloidyAnnotatedTargetCollection(ContigPloidyAnnotationTableReader
-                .readContigPloidyAnnotationsFromFile(TEST_CONTIG_ANNOTS_SAME_PLOIDY_FILE),
+        samePloidyAnnots = new GermlinePloidyAnnotatedTargetCollection(ContigGermlinePloidyAnnotationTableReader
+                .readContigGermlinePloidyAnnotationsFromFile(TEST_CONTIG_ANNOTS_SAME_PLOIDY_FILE),
                 testReadCounts.targets());
-        differentPloidyAnnots = new PloidyAnnotatedTargetCollection(ContigPloidyAnnotationTableReader
-                .readContigPloidyAnnotationsFromFile(TEST_CONTIG_ANNOTS_DIFFERENT_PLOIDY_FILE),
+        differentPloidyAnnots = new GermlinePloidyAnnotatedTargetCollection(ContigGermlinePloidyAnnotationTableReader
+                .readContigGermlinePloidyAnnotationsFromFile(TEST_CONTIG_ANNOTS_DIFFERENT_PLOIDY_FILE),
                 testReadCounts.targets());
         copyNumberPosteriorCalculator = new CoverageModelGermlineCopyNumberPosteriorCalculator(
                 CNV_EVENT_PROBABILITY, CNV_EVENT_MEAN_SIZE);
@@ -140,7 +135,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
 //    }
 
     @Test(dataProvider = "ploidyAnnotsDataProvider")
-    public void sparkTest(@Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots) {
+    public void sparkTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
         params = new CoverageModelEMParams();
                 //.enableFourierRegularization()
                 //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));

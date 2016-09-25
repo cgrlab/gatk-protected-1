@@ -101,7 +101,10 @@ public abstract class CoverageModelEMAlgorithm {
 
         showIterationHeader();
 
-        double prevLogLikelihood = Double.NEGATIVE_INFINITY;
+        double prevEStepLikelihood = Double.NEGATIVE_INFINITY;
+        double latestEStepLikelihood = Double.NEGATIVE_INFINITY;
+        double prevMStepLikelihood = Double.NEGATIVE_INFINITY;
+        double latestMStepLikelihood = Double.NEGATIVE_INFINITY;
         final IterationInfo iterInfo = new IterationInfo(Double.NEGATIVE_INFINITY, 0, 0);
         boolean updateCopyRatioPosteriors = false;
         boolean paramEstimationConverged = false;
@@ -114,7 +117,7 @@ public abstract class CoverageModelEMAlgorithm {
             int iterEStep = 0;
 
             while (iterEStep < params.getMaxEStepCycles()) {
-                double posteriorErrorNormReadDepth = 0, posteriorErrorNormBias = 0, posteriorErrorNormCopyRatio = 0;
+                double posteriorErrorNormReadDepth, posteriorErrorNormBias, posteriorErrorNormCopyRatio = 0;
 
                 runRoutine(this::updateReadDepthLatentPosteriorExpectations, s -> "N/A", "E_STEP_D", iterInfo);
                 posteriorErrorNormReadDepth = iterInfo.errorNorm;
@@ -139,26 +142,16 @@ public abstract class CoverageModelEMAlgorithm {
                 iterEStep++;
             }
 
-            /* if the likelihood has increased and the increment is small, start updating copy number posteriors */
-            if (performCopyRatioPosteriorCalling &&
-                    !updateCopyRatioPosteriors &&
-                    (iterInfo.logLikelihood - prevLogLikelihood) > 0 &&
-                    (iterInfo.logLikelihood - prevLogLikelihood) < params.getLogLikelihoodTolThresholdCopyRatioCalling()) {
-                updateCopyRatioPosteriors = true;
-                logger.info("Partial convergence achieved; will start calling copy ratio posteriors after the current" +
-                        " iteration; also, will switch to " +
-                        CoverageModelEMParams.PsiSolverType.PSI_TARGET_RESOLVED_VIA_BRENT.name());
-                params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverType.PSI_TARGET_RESOLVED_VIA_BRENT);
-            }
-
             if (maxPosteriorErrorNorm > params.getPosteriorErrorNormTol()) {
                 logger.info("E-step cycles did not fully converge. Increase the maximum number of E-step cycles." +
                         " Continuing...");
             }
 
+            prevEStepLikelihood = latestEStepLikelihood;
+            latestEStepLikelihood = iterInfo.logLikelihood;
+
             /* parameter estimation if required */
             if (performMStep && !paramEstimationConverged) {
-                prevLogLikelihood = iterInfo.logLikelihood; /* log likelihood from the previous E-step */
                 int iterMStep = 0;
                 double maxParamErrorNorm = 0;
 
@@ -193,20 +186,34 @@ public abstract class CoverageModelEMAlgorithm {
                     iterMStep++;
                 }
 
+                prevMStepLikelihood = latestMStepLikelihood;
+                latestMStepLikelihood = iterInfo.logLikelihood;
+
+                /* if the likelihood has increased and the increment is small, start updating copy number posteriors */
+                if (performCopyRatioPosteriorCalling &&
+                        !updateCopyRatioPosteriors &&
+                        (latestMStepLikelihood - prevMStepLikelihood) > 0 &&
+                        (latestMStepLikelihood - prevMStepLikelihood) < params.getLogLikelihoodTolThresholdCopyRatioCalling()) {
+                    updateCopyRatioPosteriors = true;
+                    logger.info("Partial convergence achieved; will start calling copy ratio posteriors after the current" +
+                            " iteration; also, will switch to " +
+                            CoverageModelEMParams.PsiSolverType.PSI_TARGET_RESOLVED_VIA_BRENT.name());
+                    params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverType.PSI_TARGET_RESOLVED_VIA_BRENT);
+                }
             }
 
             /* check convergence in log likelihood change */
-            if (FastMath.abs(iterInfo.logLikelihood - prevLogLikelihood) < params.getLogLikelihoodTolerance()) {
+            if (FastMath.abs(latestMStepLikelihood - prevMStepLikelihood) < params.getLogLikelihoodTolerance()) {
+                /* make sure that we have either called copy ratio posteriors, or we are not required to */
                 if (!performCopyRatioPosteriorCalling || updateCopyRatioPosteriors) {
                     status = EMAlgorithmStatus.SUCCESS_LIKELIHOOD_TOL;
                     break;
                 }
             } else if (iterInfo.iter == params.getMaxIterations() - 2) {
-                performMStep = false; /* so that we end with the E-step */
+                performMStep = false; /* so that we end with an E-step */
             }
 
             iterInfo.increaseIterationCount();
-            prevLogLikelihood = iterInfo.logLikelihood;
         }
 
         if (iterInfo.iter == params.getMaxIterations()) {
@@ -223,7 +230,8 @@ public abstract class CoverageModelEMAlgorithm {
 
         showIterationHeader();
 
-        double prevLogLikelihood = Double.NEGATIVE_INFINITY;
+        double prevEStepLikelihood = Double.NEGATIVE_INFINITY;
+        double latestEStepLikelihood = Double.NEGATIVE_INFINITY;
         final IterationInfo iterInfo = new IterationInfo(Double.NEGATIVE_INFINITY, 0, 0);
         boolean updateCopyRatioPosteriors = false;
 
@@ -246,13 +254,16 @@ public abstract class CoverageModelEMAlgorithm {
                 posteriorErrorNormCopyRatio = 0;
             }
 
+            prevEStepLikelihood = latestEStepLikelihood;
+            latestEStepLikelihood = iterInfo.logLikelihood;
+
             /* calculate the maximum change of posteriors in this cycle */
             maxPosteriorErrorNorm = Collections.max(Arrays.asList(posteriorErrorNormReadDepth,
                     posteriorErrorNormBias, posteriorErrorNormCopyRatio));
 
             /* check convergence of the E-step */
             if (maxPosteriorErrorNorm < params.getPosteriorErrorNormTol() &&
-                    FastMath.abs(iterInfo.logLikelihood - prevLogLikelihood) < params.getLogLikelihoodTolerance()) {
+                    FastMath.abs(latestEStepLikelihood - prevEStepLikelihood) < params.getLogLikelihoodTolerance()) {
                 status = EMAlgorithmStatus.SUCCESS_POSTERIOR_CONVERGENCE;
                 break;
             }
@@ -260,14 +271,13 @@ public abstract class CoverageModelEMAlgorithm {
             /* if the likelihood has increased and the increment is small, start updating copy number posteriors */
             if (performCopyRatioPosteriorCalling &&
                     !updateCopyRatioPosteriors &&
-                    (iterInfo.logLikelihood - prevLogLikelihood) > 0 &&
-                    (iterInfo.logLikelihood - prevLogLikelihood) < params.getLogLikelihoodTolThresholdCopyRatioCalling()) {
+                    (latestEStepLikelihood - prevEStepLikelihood) > 0 &&
+                    (latestEStepLikelihood - prevEStepLikelihood) < params.getLogLikelihoodTolThresholdCopyRatioCalling()) {
                 updateCopyRatioPosteriors = true;
                 logger.info("Partial convergence achieved; will start calling copy ratio posteriors");
             }
 
             iterInfo.increaseIterationCount();
-            prevLogLikelihood = iterInfo.logLikelihood;
         }
 
         if (iterInfo.iter == params.getMaxIterations()) {

@@ -158,13 +158,13 @@ m_{st} &\equiv \ln(n_{st}/\PP_{st}) - \ln (c_{st}) - \ln(d_s), \nonumber\\
 \label{eq:m_sigma_def}
 \end{align}
 
-\begin{figure}
-\center
-\includegraphics[scale=0.7]{figs/{gauss_poisson_0.1}.pdf}
-\includegraphics[scale=0.7]{figs/{gauss_poisson_10}.pdf}
-\caption{Gaussian approximation to the Poisson likelihood (see Eq.~\ref{eq:gaussian_approx_coverage}). The left and right panels show $\mathrm{Poisson}(n|\alpha\,e^b)$ and $n^{-1}\mathcal{N}(b|\ln(n/\alpha), n^{-1})$, respectively for $\alpha=0.1$ (top) and $\alpha=10.0$ (bottom). The black lines show $b = \ln(n/\alpha)$ the maximum likelihood bias estimate. The Gaussian approximation breaks down at $n=0$ (no coverage). It also slightly overestimates the variance at small $n$. Otherwise, it is an excellent approximation.}
-\label{fig:gaussian_approx_coverage}
-\end{figure}
+% \begin{figure}
+% \center
+% \includegraphics[scale=0.7]{figs/{gauss_poisson_0.1}.pdf}
+% \includegraphics[scale=0.7]{figs/{gauss_poisson_10}.pdf}
+% \caption{Gaussian approximation to the Poisson likelihood (see Eq.~\ref{eq:gaussian_approx_coverage}). The left and right panels show $\mathrm{Poisson}(n|\alpha\,e^b)$ and $n^{-1}\mathcal{N}(b|\ln(n/\alpha), n^{-1})$, respectively for $\alpha=0.1$ (top) and $\alpha=10.0$ (bottom). The black lines show $b = \ln(n/\alpha)$ the maximum likelihood bias estimate. The Gaussian approximation breaks down at $n=0$ (no coverage). It also slightly overestimates the variance at small $n$. Otherwise, it is an excellent approximation.}
+% \label{fig:gaussian_approx_coverage}
+% \end{figure}
 
 Note that $\Sigma_{st}$ can be thought of as the width of the distribution of $b_{st}$ about its maximum likelihood estimate such that in the limit $n_{st}, d_s \rightarrow \infty$, ${\rm Poisson}(n_{st} | d_s c_{st} e^{b_{st}}) \rightarrow \delta(b_{st} - b^*_{st})$ where $b^*_{st} = \lim_{n,d \rightarrow \infty} m_{st}$ is the true bias. The above approximation, while being excellent for well-covered targets (see Fig.~\ref{fig:gaussian_approx_coverage}), inevitably breaks down for targets that are uncovered {\em ex ante} in some samples, such as $Y$ chromosome targets in female samples. To this end, we define a ``sample-target mask matrix'' $\MM_{st}$ such that $\MM_{st} = 0$ if $\PP_{st} = 0$, and $\MM_{st} = 1$ if $\PP_{st} \neq 0$, and for each sample-target pair $(s,t)$, we only consider targets where the $\MM_{st} \neq 0$ in the joint likelihood function. The latter is thus written as:
 \begin{equation}
@@ -253,9 +253,9 @@ We notice that the latent variables $(\vc, \vd)$ are coupled to $\vz$ due to the
 The E step requires solving the following set of mean-field self-consistency equations:
 \begin{subequations}
 \begin{align}
-\ln \Phi_c(\vc) &= \EE_{\vz, \vd}\big[\ln P(\vn, \vc, \vz, \vd | \vtheta)\big],\\
-\ln \Phi_z(\vz) &= \EE_{\vc, \vd}\big[\ln P(\vn, \vc, \vz, \vd | \vtheta)\big],\\
-\ln \Phi_d(\vd) &= \EE_{\vc, \vz}\big[\ln P(\vn, \vc, \vz, \vd | \vtheta)\big],
+\ln \Phi_c(\vc) &= \EE_{\vz, \vd}\big[\ln P(\vc, \vz, \vd | \vn, \vtheta)\big],\\
+\ln \Phi_z(\vz) &= \EE_{\vc, \vd}\big[\ln P(\vc, \vz, \vd | \vn, \vtheta)\big],\\
+\ln \Phi_d(\vd) &= \EE_{\vc, \vz}\big[\ln P(\vc, \vz, \vd | \vn, \vtheta)\big],
 \end{align}
 \end{subequations}
 where the posterior expectation values are calculated with respect to the factorized distribution. Writing out the right hand side explicitly, we find:
@@ -357,11 +357,11 @@ We have left out $n=0$ from the summation since we implicitly assume such target
 \begin{align}
 \mathcal{N}^{-1} &\simeq \int_{1}^\infty \mathrm{d}n\,\exp\left[-\frac{\Lambda}{2}\,(\ln n - \mu)^2\right]\nonumber\\
 &= \int_{0}^\infty \mathrm{d}x \, \exp\left[-\frac{\Lambda}{2}\,(x - \mu)^2 + x\right] = \exp\left(\mu + \frac{1}{2\Lambda}\right)\int_{0}^\infty \mathrm{d}x \, \exp\left[-\frac{\Lambda}{2}\,(x - \mu - \Lambda^{-1})^2\right]\nonumber\\
-&= \sqrt{\frac{2\Lambda}{\pi}}\,\exp\left(\mu + \frac{1}{2\Lambda}\right) \mathrm{erfc}\left(-\frac{\Lambda \mu + 1}{\sqrt{2\Lambda}}\right).
+&= \sqrt{\frac{\pi}{2\Lambda}}\,\exp\left(\mu + \frac{1}{2\Lambda}\right) \mathrm{erfc}\left(-\frac{\Lambda \mu + 1}{\sqrt{2\Lambda}}\right).
 \end{align}
 In summary, the log emission probability is given by:
 \begin{equation}
-\ln P_{\mathrm{em}}(n|c) \simeq \frac{1}{2}\,\ln\left(\frac{\pi}{2\Lambda}\right) - \mu - \frac{1}{2\Lambda} - \ln \mathrm{erfc}\left(-\frac{\Lambda \mu + 1}{\sqrt{2\Lambda}}\right) - \frac{1}{2}\,\Lambda\,(\ln n - \mu)^2.
+\ln P_{\mathrm{em}}(n|c) \simeq -\frac{1}{2}\,\ln\left(\frac{\pi}{2\Lambda}\right) - \mu - \frac{1}{2\Lambda} - \ln \mathrm{erfc}\left(-\frac{\Lambda \mu + 1}{\sqrt{2\Lambda}}\right) - \frac{1}{2}\,\Lambda\,(\ln n - \mu)^2.
 \end{equation}
 Note that $c$ implicitly appears in $\mu$. Also, we recall that $\mathrm{erfc}(-x) = 1 + \mathrm{erf}(x)$ which is useful in numerics.
 
@@ -387,19 +387,19 @@ In this section, we present the result of the algorithm on synthetic coverage da
 
 Fig.~\ref{fig:comp_regularizer} compares PCA denoising against our probabilistic model with different features turned on/off (ARD, CNV event regularization) for random and correlated events, respectively. It is clearly observed that the regularized model retains all of the events even when the number of latent features chosen is greater than the true number.
 
-\begin{figure}
-\center
-$D=10$\\
-\vspace{10pt}
-\includegraphics[scale=0.45]{figs/comp_random_events_10.pdf}
-\vspace{20pt}
-\includegraphics[scale=0.45]{figs/comp_corr_events_10.pdf}
-$D=20$\\
-\vspace{10pt}
-\includegraphics[scale=0.45]{figs/comp_random_events_20.pdf}
-\includegraphics[scale=0.45]{figs/comp_corr_events_20.pdf}
-\caption{Comparison of PCA with the probabilistic coverage model in different modes. Top two rows: $D=10$; random events, correlated events. Bottom two rows: $D=20$; random events, correlated events.}
-\label{fig:comp_regularizer}
-\end{figure}
+% \begin{figure}
+% \center
+% $D=10$\\
+% \vspace{10pt}
+% \includegraphics[scale=0.45]{figs/comp_random_events_10.pdf}
+% \vspace{20pt}
+% \includegraphics[scale=0.45]{figs/comp_corr_events_10.pdf}
+% $D=20$\\
+% \vspace{10pt}
+% \includegraphics[scale=0.45]{figs/comp_random_events_20.pdf}
+% \includegraphics[scale=0.45]{figs/comp_corr_events_20.pdf}
+% \caption{Comparison of PCA with the probabilistic coverage model in different modes. Top two rows: $D=10$; random events, correlated events. Bottom two rows: $D=20$; random events, correlated events.}
+% \label{fig:comp_regularizer}
+% \end{figure}
 
 \end{document}

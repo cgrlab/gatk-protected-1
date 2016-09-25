@@ -432,23 +432,27 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
 
     private Genotype composeNonTruthOverlappingGenotype(final VariantContext enclosingContext, final Genotype genotype) {
         final GenotypeBuilder builder = new GenotypeBuilder(genotype.getSampleName());
-        GATKProtectedVariantContextUtils.setGenotypeQualityFromPLs(builder, genotype);
-
-        final int[] PL = genotype.getPL();
-        final int callAlleleIndex = GATKProtectedMathUtils.minIndex(PL);
-        final double quality = callQuality(genotype);
-        builder.alleles(Collections.singletonList(enclosingContext.getAlleles().get(callAlleleIndex)));
-        builder.attribute(VariantEvaluationContext.CALL_QUALITY_KEY, quality);
-        final boolean discovered = XHMMSegmentGenotyper.DISCOVERY_TRUE.equals(
-                GATKProtectedVariantContextUtils.getAttributeAsString(genotype, XHMMSegmentGenotyper.DISCOVERY_KEY,
-                        XHMMSegmentGenotyper.DISCOVERY_FALSE));
-        if (callAlleleIndex != 0 && discovered) {
-            builder.attribute(VariantEvaluationContext.EVALUATION_CLASS_KEY, EvaluationClass.UNKNOWN_POSITIVE.acronym);
-        }
-        if (quality < filterArguments.minimumCalledSegmentQuality) {
-            builder.filter(EvaluationFilter.LowQuality.acronym);
-        } else {
-            builder.filter(EvaluationFilter.PASS);
+        if (genotype.isCalled()) {
+            GATKProtectedVariantContextUtils.setGenotypeQualityFromPLs(builder, genotype);
+            final int[] PL = genotype.getPL();
+            final int callAlleleIndex = GATKProtectedMathUtils.minIndex(PL);
+            final double quality = callQuality(genotype);
+            builder.alleles(Collections.singletonList(enclosingContext.getAlleles().get(callAlleleIndex)));
+            builder.attribute(VariantEvaluationContext.CALL_QUALITY_KEY, quality);
+            final boolean discovered = XHMMSegmentGenotyper.DISCOVERY_TRUE.equals(
+                    GATKProtectedVariantContextUtils.getAttributeAsString(genotype, XHMMSegmentGenotyper.DISCOVERY_KEY,
+                            XHMMSegmentGenotyper.DISCOVERY_FALSE));
+            if (callAlleleIndex != 0 && discovered) {
+                builder.attribute(VariantEvaluationContext.EVALUATION_CLASS_KEY, EvaluationClass.UNKNOWN_POSITIVE.acronym);
+            }
+            if (quality < filterArguments.minimumCalledSegmentQuality) {
+                builder.filter(EvaluationFilter.LowQuality.acronym);
+            } else {
+                builder.filter(EvaluationFilter.PASS);
+            }
+        } else { /* not called */
+            builder.noPL().noGQ().noDP().noAD();
+            builder.alleles(Collections.singletonList(Allele.NO_CALL));
         }
         return builder.make();
     }
@@ -551,7 +555,7 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
         // Set the truth allele.
         builder.attribute(VariantEvaluationContext.TRUTH_GENOTYPE_KEY, CopyNumberTriStateAllele.ALL_ALLELES.indexOf(truthAllele));
 
-        // Annotate the genotye with the number of calls.
+        // Annotate the genotype with the number of calls.
         builder.attribute(VariantEvaluationContext.CALLED_SEGMENTS_COUNT_KEY, calls.size());
 
         // When there is more than one qualified type of event we indicate how many.

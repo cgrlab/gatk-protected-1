@@ -87,20 +87,20 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
         copyNumberPosteriorCalculator.initializeCaches(testReadCounts.targets());
     }
 
-//    @Test(dataProvider = "ploidyAnnotsDataProvider")
-//    public void localTest(@Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots) {
-//        params = new CoverageModelEMParams();
-//                //.enableFourierRegularization()
-//                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
-//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
-//        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
-//                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
-//                1, null);
-//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle(params, ws);
-//        algo.runExpectationMaximization(true);
-//        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah");
-//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
-//    }
+    @Test(dataProvider = "ploidyAnnotsDataProvider")
+    public void localTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
+        params = new CoverageModelEMParams();
+                //.enableFourierRegularization()
+                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
+        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
+        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
+                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
+                1, null);
+        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
+        algo.runExpectationMaximization(true);
+        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah");
+        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
+    }
 
 //    @Test(dataProvider = "ploidyAnnotsDataProvider")
 //    public void somaticTestLocal(@Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots) {
@@ -134,22 +134,22 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
 //        ws.savePosteriors("/Users/mehrtash/Data/Genome/PPCA/out/blah2", true);
 //    }
 
-    @Test(dataProvider = "ploidyAnnotsDataProvider")
-    public void sparkTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
-        params = new CoverageModelEMParams();
-                //.enableFourierRegularization()
-                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
-        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
-        final JavaSparkContext ctx = SparkContextFactory.getTestSparkContext(nd4jSparkProperties);
-        final String checkpointingPath = createTempDir("coverage_model_spark_checkpoint").getAbsolutePath();
-        ctx.setCheckpointDir(checkpointingPath);
-        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
-                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
-                NUMBER_OF_PARTITIONS, ctx);
-        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
-        algo.runExpectationMaximization(true);
-        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
-    }
+//    @Test(dataProvider = "ploidyAnnotsDataProvider")
+//    public void sparkTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
+//        params = new CoverageModelEMParams();
+//                //.enableFourierRegularization()
+//                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
+//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
+//        final JavaSparkContext ctx = SparkContextFactory.getTestSparkContext(nd4jSparkProperties);
+//        final String checkpointingPath = createTempDir("coverage_model_spark_checkpoint").getAbsolutePath();
+//        ctx.setCheckpointDir(checkpointingPath);
+//        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
+//                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
+//                NUMBER_OF_PARTITIONS, ctx);
+//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
+//        algo.runExpectationMaximization(true);
+//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
+//    }
 
     @DataProvider(name = "ploidyAnnotsDataProvider")
     public Object[][] ploidyAnnotsDataProvider() {

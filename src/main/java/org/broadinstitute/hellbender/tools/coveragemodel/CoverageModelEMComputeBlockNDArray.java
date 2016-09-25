@@ -264,29 +264,29 @@ public class CoverageModelEMComputeBlockNDArray {
      */
     public List<List<CoverageModelCopyRatioEmissionData>> getSampleCopyRatioLatentPosteriorData() {
         /* fetch data from cache */
-        final INDArray M_Psi_inv_st = getINDArrayFromCache("M_Psi_inv_st");
         final INDArray log_nu_st = getINDArrayFromCache("log_nu_st");
+        final INDArray M_st = getINDArrayFromCache("M_st");
+        final INDArray Psi_t = getINDArrayFromCache("Psi_t");
         final INDArray log_P_st = getINDArrayFromCache("log_P_st");
         final INDArray log_d_s = getINDArrayFromCache("log_d_s");
         final INDArray m_t = getINDArrayFromCache("m_t");
         final INDArray Wz_st = getINDArrayFromCache("Wz_st");
-        final INDArray M_st = getINDArrayFromCache("M_st");
 
         /* calculate the required quantities */
-        final INDArray log_n_st = log_nu_st.add(log_P_st);
+        final INDArray n_st = Transforms.exp(log_nu_st.add(log_P_st), false);
         final INDArray mu_st = log_P_st.add(Wz_st).addiRowVector(m_t).addiColumnVector(log_d_s);
+        final double[] psiArray = Psi_t.dup().data().asDouble();
 
         return IntStream.range(0, numSamples)
                 .mapToObj(si -> {
                     final double[] currentSampleMaskArray = M_st.getRow(si).dup().data().asDouble();
-                    final double[] currentSampleLogReadCountArray = log_n_st.getRow(si).dup().data().asDouble();
-                    final double[] currentSampleNeutralMeanArray = mu_st.getRow(si).dup().data().asDouble();
-                    final double[] currentSamplePrecisionArray = M_Psi_inv_st.getRow(si).dup().data().asDouble();
+                    final double[] currentSampleReadCountArray = n_st.getRow(si).dup().data().asDouble();
+                    final double[] currentSampleMuArray = mu_st.getRow(si).dup().data().asDouble();
                     return IntStream.range(0, targetBlock.getNumTargets())
                             .mapToObj(ti -> (int)currentSampleMaskArray[ti] == 0
                                     ? null
-                                    : new CoverageModelCopyRatioEmissionData(currentSampleNeutralMeanArray[ti],
-                                                currentSamplePrecisionArray[ti], currentSampleLogReadCountArray[ti]))
+                                    : new CoverageModelCopyRatioEmissionData(currentSampleMuArray[ti],
+                                                psiArray[ti], currentSampleReadCountArray[ti]))
                             .collect(Collectors.toList());
                 }).collect(Collectors.toList());
     }

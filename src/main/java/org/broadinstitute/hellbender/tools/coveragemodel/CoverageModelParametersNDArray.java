@@ -117,7 +117,7 @@ public class CoverageModelParametersNDArray implements Serializable {
     private static void createOutputPath(final String outputPath) {
         final File outputPathFile = new File(outputPath);
         if (!outputPathFile.exists()) {
-            if (!outputPathFile.mkdir()) {
+            if (!outputPathFile.mkdirs()) {
                 throw new UserException.CouldNotCreateOutputFile(outputPathFile, "Could not create the output directory");
             }
         }

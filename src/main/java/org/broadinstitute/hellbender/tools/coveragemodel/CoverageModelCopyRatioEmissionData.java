@@ -12,18 +12,18 @@ import java.io.Serializable;
  * The stored data is as follows:
  *
  * <p>
- *     The mean of the emission probability distribution calculated for n_{st} = 1, c_{st} = 1:
- *     {@link #neutralMean} = \log(P_{st}) + E[\log(d_s)] + m_t + (W.E[z_s])_t
+ *     Log multiplicative bias in the neutral copy ratio state:
+ *     {@link #mu} = \log(P_{st}) + E[\log(d_s)] + m_t + (W.E[z_s])_t
  * </p>
  *
  * <p>
- *     The precision of the distribution:
- *     {@link #precision} = \Psi_{st}^{-1}
+ *     Unexplained variance (anything not modeled, or not due to Poisson statistical uncertainty):
+ *     {@link #psi} = \Psi_t
  * </p>
  *
  * <p>
- *     Log read count:
- *     {@link #logReadCount} = \log(n_{st})
+ *     Raw read count:
+ *     {@link #readCount} = n_{st}
  * </p>
  *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
@@ -32,73 +32,57 @@ public final class CoverageModelCopyRatioEmissionData implements Serializable {
 
     private static final long serialVersionUID = -7363264674200250712L;
 
-    private double neutralMean, precision, logReadCount;
+    /**
+     * Log multiplicative bias in the neutral copy ratio state (see above)
+     */
+    private final double mu;
 
     /**
-     * A useful quantity to calculate in advance: (1/2) \log(\pi/(2\Lambda)) - 1/(2\Lambda)
+     * Unexplained variance (see above)
      */
-    private double partialLogNormalizationFactor;
+    private final double psi;
 
     /**
-     *
-     * @param neutralMean
-     * @param precision
-     * @param logReadCount
+     * Raw read count
      */
-    public CoverageModelCopyRatioEmissionData(final double neutralMean, final double precision, final double logReadCount) {
-        this.neutralMean = neutralMean;
-        this.precision = ParamUtils.isPositive(precision, "Precision must be a positive real number. Bad value: " + precision);
-        this.logReadCount = ParamUtils.isPositiveOrZero(logReadCount, "Log read count must be a positive real number. Bad value: " + logReadCount);
-        this.partialLogNormalizationFactor = 0.5 * (FastMath.log(FastMath.PI/(2*precision)) - 1.0/precision);
+    private final double readCount;
+
+    public CoverageModelCopyRatioEmissionData(final double mu, final double psi, final double readCount) {
+        this.mu = mu;
+        this.psi = ParamUtils.isPositive(psi, "Unexplained variance must be a positive real number. Bad value: " + psi);
+        this.readCount = ParamUtils.isPositive(readCount, "Read count must be a positive real number. Bad value: " + readCount);
     }
 
     /**
      *
      * @return
      */
-    public double getNeutralMean() {
-        return neutralMean;
+    public double getMu() {
+        return mu;
     }
 
     /**
      *
      * @return
      */
-    public double getPrecision() {
-        return precision;
+    public double getPsi() {
+        return psi;
     }
 
     /**
      *
      * @return
      */
-    public double getLogReadCount() {
-        return logReadCount;
-    }
-
-    /**
-     *
-     * @return
-     */
-    public double getPartialLogNormalizationFactor() {
-        return partialLogNormalizationFactor;
-    }
-
-    /**
-     *
-     * @return
-     */
-    public double getCopyRatioMaxLikelihoodEstimate() {
-        return FastMath.exp(logReadCount - neutralMean);
+    public double getReadCount() {
+        return readCount;
     }
 
     @Override
     public String toString() {
         return "CoverageModelCopyRatioEmissionData{" +
-                "neutralMean=" + neutralMean +
-                ", precision=" + precision +
-                ", logReadCount=" + logReadCount +
-                ", partialLogNormalizationFactor=" + partialLogNormalizationFactor +
+                "mu=" + mu +
+                ", psi=" + psi +
+                ", readCount=" + readCount +
                 '}';
     }
 }

@@ -20,6 +20,7 @@ import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriStateA
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.xhmm.XHMMSegmentGenotyper;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.xhmm.XHMMSegmentCaller;
 import org.broadinstitute.hellbender.utils.*;
+import org.broadinstitute.hellbender.utils.hmm.segmentation.HiddenMarkovModelPostProcessor;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -248,7 +249,7 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
             }
             final String sample = g.getSampleName();
             final SimpleInterval interval = new SimpleInterval(vc);
-            final int targetCount = targets.targetCount(interval);
+            final int targetCount = getTargetCount(targets, interval, g);
             final Set<String> variantFilters = vc.getFilters();
             final Genotype genotype = vc.getGenotype(sample);
             final Set<String> genotypeFilterArray = genotype.getFilters() == null ? Collections.emptySet()
@@ -450,7 +451,7 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
             } else {
                 builder.filter(EvaluationFilter.PASS);
             }
-        } else { /* not called */
+        } else { /* NO_CALL */
             builder.noPL().noGQ().noDP().noAD();
             builder.alleles(Collections.singletonList(Allele.NO_CALL));
         }
@@ -509,6 +510,23 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
     }
 
     /**
+     * Return the number of targets corresponding to a variant context and genotype.
+     *
+     * If the genotype has the target count attribute, we use that; otherwise, we infer it from the
+     * target list.
+     *
+     * @param targets
+     * @param interval
+     * @param g
+     * @return
+     */
+    private int getTargetCount(final TargetCollection<Target> targets, final Locatable interval, final Genotype g) {
+        return GATKProtectedVariantContextUtils.getAttributeAsInt(g,
+                HiddenMarkovModelPostProcessor.NUMBER_OF_SAMPLE_SPECIFIC_TARGETS_KEY,
+                targets.targetCount(interval));
+    }
+
+    /**
      * Reduces a list of calls to the ones that pass filters.
      * @param targets collection of targets under analysis.
      * @param calls calls to filter.
@@ -521,8 +539,9 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
                 .filter(pair -> pair.getRight().getAlleles().stream().anyMatch(a -> a.isCalled() && a.isNonReference()))
                 // Filter vc/gt with low call quality (SQ).
                 .filter(pair -> callQuality(pair.getRight()) >= filterArguments.minimumCalledSegmentQuality)
-                // Filter vc/gt with small segments (small number of targets)
-                .filter(pair -> targets.targetCount(pair.getLeft()) >= filterArguments.minimumCalledSegmentLength)
+                // Filter vc/gt with small segments (small number of targets). If the call genotype has sample number
+                // of targets attribute, we use that; otherwise, we get the target count from the target list
+                .filter(pair -> getTargetCount(targets, pair.getLeft(), pair.getRight()) >= filterArguments.minimumCalledSegmentLength)
                 // Filter vc/gt with that seem to be too common.
                 // or if it is multi-allelic when applies.
                 .filter(pair -> {
@@ -568,7 +587,7 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
 
         // Calculate the length in targets of the call as the sum across all calls.
         builder.attribute(VariantEvaluationContext.CALLED_TARGET_COUNT_KEY,
-                calls.stream().mapToInt(pair -> targets.targetCount(pair.getLeft()))
+                calls.stream().mapToInt(pair -> getTargetCount(targets, pair.getLeft(), pair.getRight()))
                         .sum());
 
         // Calculate call quality-- if there is more than one overlapping call we take the maximum qual one.

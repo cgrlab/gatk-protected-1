@@ -371,7 +371,7 @@ public class HiddenMarkovModelPostProcessor<D, S extends AlleleMetadataProvider 
             final S nextState = pathIterator.next();
             final String nextContig = targetIterator.next().getContig();
             final boolean contigChanged = !currentContig.equals(nextContig);
-            final boolean stateChanged = (nextState != currentState);
+            final boolean stateChanged = !nextState.equals(currentState);
             if (contigChanged || stateChanged) {
                 final int newCurrentStartIndex = pathIterator.previousIndex();
                 result.add(new ImmutablePair<>(new IndexRange(currentStartIndex, newCurrentStartIndex), currentState));

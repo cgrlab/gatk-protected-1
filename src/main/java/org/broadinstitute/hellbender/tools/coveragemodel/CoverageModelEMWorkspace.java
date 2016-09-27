@@ -211,7 +211,7 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
 
     public abstract void saveModel(final String outputPath);
 
-    public void savePosteriors(final S refrenceState, final String outputPath, @Nullable final String commandLine) {
+    public void savePosteriors(final S referenceState, final String outputPath, @Nullable final String commandLine) {
         /* create output directory if it doesn't exist */
         createOutputPath(outputPath);
 
@@ -285,7 +285,7 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
                         copyRatioHMMResult.stream()
                                 .map(CopyRatioHiddenMarkovModelResults::getViterbiResult)
                                 .collect(Collectors.toList()),
-                        refrenceState);
+                        referenceState);
 
         final File segmentsFile = new File(outputPath, "copy_ratio_segments.seg");
         final File vcfFile = new File(outputPath, "copy_ratio_genotypes.vcf");
@@ -296,6 +296,40 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(segmentsFile, "Could not create copy ratio segments file");
         }
+
+        /* also, save Viterbi as a matrix */
+        final File copyRatioViterbiFile = new File(outputPath, "copy_ratio_Viterbi.tsv");
+        try (final TableWriter<TargetDoubleRecord> copyRatioRecordTableWriter = getTargetDoubleRecordTableWriter(new FileWriter(copyRatioViterbiFile),
+                processedReadCounts.columnNames())) {
+            final List<TargetCollection<Target>> sampleTargetCollections = new ArrayList<>(numSamples);
+            for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
+                sampleTargetCollections.add(new HashedListTargetCollection<>(copyRatioHMMResult.get(sampleIndex).getTargetList()));
+            }
+            for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
+                copyRatioRecordTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
+                        getViterbiAsDoubleArray(copyRatioHMMResult, sampleTargetCollections, targetIndex)));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(copyRatioViterbiFile, "Could not save copy ratio Viterbi results");
+        }
+    }
+
+    private double[] getViterbiAsDoubleArray(final List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> copyRatioHMMResult,
+                                             final List<TargetCollection<Target>> sampleTargetCollections,
+                                             final int targetIndex) {
+        final Target target = processedTargetList.get(targetIndex);
+        final double[] res = new double[numSamples];
+        for (int si = 0; si < numSamples; si++) {
+            final TargetCollection<Target> sampleTargets = sampleTargetCollections.get(si);
+            final List<S> sampleCalls = copyRatioHMMResult.get(si).getViterbiResult();
+            final int sampleTargetIndex = sampleTargets.index(target);
+            if (sampleTargetIndex >= 0) {
+                res[si] = sampleCalls.get(sampleTargetIndex).getScalar();
+            } else {
+                res[si] = 0.0;
+            }
+        }
+        return res;
     }
 
     private void createOutputPath(final String outputPath) {

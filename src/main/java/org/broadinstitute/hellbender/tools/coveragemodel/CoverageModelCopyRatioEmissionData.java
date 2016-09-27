@@ -49,7 +49,7 @@ public final class CoverageModelCopyRatioEmissionData implements Serializable {
 
     public CoverageModelCopyRatioEmissionData(final double mu, final double psi, final double readCount) {
         this.mu = mu;
-        this.psi = ParamUtils.isPositive(psi, "Unexplained variance must be a positive real number. Bad value: " + psi);
+        this.psi = ParamUtils.isPositiveOrZero(psi, "Unexplained variance must be a non-negative real number. Bad value: " + psi);
         this.readCount = ParamUtils.isPositive(readCount, "Read count must be a positive real number. Bad value: " + readCount);
     }
 

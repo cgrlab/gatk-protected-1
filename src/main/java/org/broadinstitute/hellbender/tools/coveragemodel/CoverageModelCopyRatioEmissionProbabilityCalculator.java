@@ -2,8 +2,6 @@ package org.broadinstitute.hellbender.tools.coveragemodel;
 
 import org.apache.commons.math3.analysis.interpolation.BicubicInterpolatingFunction;
 import org.apache.commons.math3.analysis.interpolation.BicubicInterpolator;
-import org.apache.commons.math3.analysis.interpolation.PiecewiseBicubicSplineInterpolatingFunction;
-import org.apache.commons.math3.analysis.interpolation.PiecewiseBicubicSplineInterpolator;
 import org.apache.commons.math3.exception.NotFiniteNumberException;
 import org.apache.commons.math3.special.Erf;
 import org.apache.commons.math3.util.FastMath;
@@ -72,6 +70,8 @@ public class CoverageModelCopyRatioEmissionProbabilityCalculator implements
                                 double copyRatio, @Nullable Target target) {
         final double mu = emissionData.getMu() + FastMath.log(copyRatio);
         final double psi = emissionData.getPsi();
+//        final double logProbabilityMass = 1.0;
+        // TODO
         final double logProbabilityMass = getLogProbabilityMass(mu, psi);
         final double res = getUnnormalizedLogPDF(emissionData.getReadCount(), mu, psi)
                 - logProbabilityMass;

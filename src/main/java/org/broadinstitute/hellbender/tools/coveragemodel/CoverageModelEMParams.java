@@ -39,7 +39,7 @@ public class CoverageModelEMParams {
     private DataBuffer.Type dType = DataBuffer.Type.DOUBLE;
 
     /* maximum number of EM iterations */
-    private int maxIterations = 20;
+    private int maxIterations = 10;
 
     /* dimension of the latent space */
     private int numLatents = 10;

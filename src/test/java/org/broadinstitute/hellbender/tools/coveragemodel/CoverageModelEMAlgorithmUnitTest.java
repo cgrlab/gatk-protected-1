@@ -154,7 +154,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
     @DataProvider(name = "ploidyAnnotsDataProvider")
     public Object[][] ploidyAnnotsDataProvider() {
 //        return new Object[][] {{samePloidyAnnots}, {differentPloidyAnnots}};
-        return new Object[][] {{samePloidyAnnots}};
+        return new Object[][] {{differentPloidyAnnots}};
     }
 
 }

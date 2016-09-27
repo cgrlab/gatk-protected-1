@@ -169,6 +169,7 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
                                                                  @Nonnull final Logger logger) {
         ReadCountCollection processedReadCounts;
         processedReadCounts = ReadCountCollectionUtils.removeTotallyUncoveredTargets(rawReadCounts, logger);
+        processedReadCounts = ReadCountCollectionUtils.removeColumnsWithBadValues(processedReadCounts, logger);
 
         return processedReadCounts;
     }

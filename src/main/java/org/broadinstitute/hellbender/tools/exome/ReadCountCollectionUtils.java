@@ -561,6 +561,39 @@ public final class ReadCountCollectionUtils {
         }
     }
 
+    public static ReadCountCollection removeColumnsWithBadValues(final ReadCountCollection readCounts,
+                                                                 final Logger logger) {
+        final List<String> columnNames = readCounts.columnNames();
+        final RealMatrix counts = readCounts.counts();
+
+        // Determine kept and dropped column sets.
+        final Set<String> columnsToKeep = new HashSet<>(readCounts.columnNames().size());
+        final Set<String> columnsToDrop = new HashSet<>();
+        for (int i = 0; i < columnNames.size(); i++) {
+            if (Arrays.stream(readCounts.getColumn(i))
+                    .filter(d -> Double.isNaN(d) || Double.isInfinite(d))
+                    .count() == 0) {
+                columnsToKeep.add(columnNames.get(i));
+            } else {
+                columnsToDrop.add(columnNames.get(i));
+            }
+        }
+
+        // log and drop columns if it applies
+        if (columnsToKeep.isEmpty()) {
+            throw new UserException.BadInput("No column count left after removing those with NaN and infinities");
+        } else if (columnsToKeep.size() == columnNames.size()) {
+            logger.info("No column dropped due to bad values");
+            return readCounts;
+        } else {
+            final double droppedPercentage = ((double)(columnsToDrop.size()) / columnNames.size()) * 100;
+            logger.info(String.format("Some columns dropped (%d out of %d, %.2f%%) as they contained bad values: %s",
+                    columnsToDrop.size(), columnNames.size(), droppedPercentage,
+                    columnsToDrop.stream().collect(Collectors.joining("[", ", ", "]"))));
+            return readCounts.subsetColumns(columnsToKeep);
+        }
+    }
+
     private static long countZeroes(final double[] data) {
         return DoubleStream.of(data).filter(d -> d == 0.0).count();
     }

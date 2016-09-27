@@ -68,8 +68,8 @@ public class CoverageModelEMComputeBlockNDArray {
                                                @Nonnull final ImmutableComputableGraph icg,
                                                @Nullable SubroutineSignal latestMStepSignal) {
         /* Set Nd4j DType to Double in context */
-        DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE);
         Nd4j.create(1);
+        DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE);
 
         this.numSamples = ParamUtils.isPositive(numSamples, "Number of samples must be positive.");
         this.numLatents = ParamUtils.isPositive(numLatents, "Dimension of the latent space must be positive.");
@@ -336,7 +336,7 @@ public class CoverageModelEMComputeBlockNDArray {
      * M-step for target mean bias *
      *******************************/
 
-    public CoverageModelEMComputeBlockNDArray updateTargetMeanBias() {
+    public CoverageModelEMComputeBlockNDArray updateTargetMeanBias(final boolean neglectPCBias) {
         /* fetch the required caches */
         final INDArray log_nu_st = getINDArrayFromCache("log_nu_st");
         final INDArray log_c_st = getINDArrayFromCache("log_c_st");
@@ -344,13 +344,22 @@ public class CoverageModelEMComputeBlockNDArray {
         final INDArray M_Psi_inv_st = getINDArrayFromCache("M_Psi_inv_st");
         final INDArray Wz_st = getINDArrayFromCache("Wz_st");
 
-        final INDArray newTargetMeanBias = M_Psi_inv_st.mul(log_nu_st.sub(log_c_st).subiColumnVector(log_d_s)
-                .sub(Wz_st)).sum(0).div(M_Psi_inv_st.sum(0));
+        final INDArray numerator;
+        if (neglectPCBias) {
+            numerator = M_Psi_inv_st.mul(log_nu_st.sub(log_c_st).subiColumnVector(log_d_s)).sum(0);
+        } else {
+            numerator = M_Psi_inv_st.mul(log_nu_st.sub(log_c_st).subiColumnVector(log_d_s).sub(Wz_st)).sum(0);
+        }
+        final INDArray denominator = M_Psi_inv_st.sum(0);
+        final INDArray newTargetMeanBias = numerator.divi(denominator);
 
-        double errNormInfinity = CoverageModelEMWorkspaceNDArrayUtils.getINDArrayNormInfinity(getINDArrayFromCache("m_t").sub(newTargetMeanBias));
+        double errNormInfinity = CoverageModelEMWorkspaceNDArrayUtils.getINDArrayNormInfinity(
+                getINDArrayFromCache("m_t").sub(newTargetMeanBias));
 
         return cloneWithUpdatedPrimitiveAndSignal("m_t", newTargetMeanBias,
-                SubroutineSignal.builder().put("error_norm", errNormInfinity).build());
+                SubroutineSignal.builder()
+                        .put("error_norm", errNormInfinity)
+                        .build());
     }
 
     /******************************************

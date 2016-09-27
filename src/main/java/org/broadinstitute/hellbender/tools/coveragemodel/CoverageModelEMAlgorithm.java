@@ -8,6 +8,7 @@ import org.broadinstitute.hellbender.utils.Utils;
 import org.nd4j.linalg.api.ndarray.INDArray;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.function.Function;
@@ -90,7 +91,8 @@ public abstract class CoverageModelEMAlgorithm {
         showIterationInfo(iterInfo.iter, name, iterInfo.logLikelihood, iterInfo.errorNorm, misc);
     }
 
-    public void runExpectationMaximization(final boolean performCopyRatioPosteriorCalling) {
+    public void runExpectationMaximization(final boolean performCopyRatioPosteriorCalling,
+                                           @Nullable final String modelOutputAbsolutePath) {
         /* if copy ratio posterior calling is enabled, the first few iterations need to be robust */
         if (!this.params.getPsiSolverType().equals(CoverageModelEMParams.PsiSolverType.PSI_ISOTROPIC_VIA_BRENT) &&
                 performCopyRatioPosteriorCalling) {
@@ -117,7 +119,7 @@ public abstract class CoverageModelEMAlgorithm {
             int iterEStep = 0;
 
             while (iterEStep < params.getMaxEStepCycles()) {
-                double posteriorErrorNormReadDepth, posteriorErrorNormBias, posteriorErrorNormCopyRatio = 0;
+                double posteriorErrorNormReadDepth = 0, posteriorErrorNormBias = 0, posteriorErrorNormCopyRatio = 0;
 
                 runRoutine(this::updateReadDepthLatentPosteriorExpectations, s -> "N/A", "E_STEP_D", iterInfo);
                 posteriorErrorNormReadDepth = iterInfo.errorNorm;
@@ -150,7 +152,7 @@ public abstract class CoverageModelEMAlgorithm {
             prevEStepLikelihood = latestEStepLikelihood;
             latestEStepLikelihood = iterInfo.logLikelihood;
 
-            /* parameter estimation if required */
+            /* parameter estimation */
             if (performMStep && !paramEstimationConverged) {
                 int iterMStep = 0;
                 double maxParamErrorNorm = 0;
@@ -159,7 +161,11 @@ public abstract class CoverageModelEMAlgorithm {
                 while (iterMStep < params.getMaxMStepCycles()) {
                     double errorNormMeanTargetBias = 0, errorNormUnexplainedVariance = 0, errorNormPrincipalMap = 0;
 
-                    runRoutine(this::updateTargetMeanBias, s -> "N/A", "M_STEP_M", iterInfo);
+                    if (iterInfo.iter == 0) { /* neglect Wz term in the first iteration */
+                        runRoutine(() -> updateTargetMeanBias(true), s -> "N/A", "M_STEP_M", iterInfo);
+                    } else {
+                        runRoutine(() -> updateTargetMeanBias(false), s -> "N/A", "M_STEP_M", iterInfo);
+                    }
                     errorNormMeanTargetBias = iterInfo.errorNorm;
 
                     runRoutine(this::updateTargetUnexplainedVariance, s -> "iters: " + s.getInteger("iterations"),
@@ -214,6 +220,10 @@ public abstract class CoverageModelEMAlgorithm {
             }
 
             iterInfo.increaseIterationCount();
+
+            if (modelOutputAbsolutePath != null && iterInfo.iter % params.getModelSavingInterval() == 0) {
+                saveModel(modelOutputAbsolutePath);
+            }
         }
 
         if (iterInfo.iter == params.getMaxIterations()) {
@@ -309,7 +319,7 @@ public abstract class CoverageModelEMAlgorithm {
     /**
      * M-step -- Update mean bias vector "m"
      */
-    public abstract SubroutineSignal updateTargetMeanBias();
+    public abstract SubroutineSignal updateTargetMeanBias(final boolean neglectPCBias);
 
     /**
      * M-step -- Update Psi
@@ -332,4 +342,6 @@ public abstract class CoverageModelEMAlgorithm {
      * @return
      */
     public abstract double[] getLogLikelihoodPerSample();
+
+    public abstract void saveModel(final String modelOutputPath);
 }

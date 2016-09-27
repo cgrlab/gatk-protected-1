@@ -57,7 +57,7 @@ public class CoverageModelEMParams {
     private int maxMStepCycles = 1;
 
     /* maximum number of E-step cycles */
-    private int maxEStepCycles = 10;
+    private int maxEStepCycles = 1; /* TODO */
 
     /* when to start calculating copy ratio posteriors */
     private double logLikelihoodTolThresholdCopyRatioCalling = 5e-2;
@@ -109,6 +109,8 @@ public class CoverageModelEMParams {
     private double meanFieldAdmixingRatio = 0.75;
 
     private boolean orthogonalizeAndSortPrincipalMap = true;
+
+    private int modelSavingInterval = 1;
 
     /********************************
      * accessor and mutator methods *
@@ -359,4 +361,12 @@ public class CoverageModelEMParams {
         return this;
     }
 
+    public int getModelSavingInterval() {
+        return modelSavingInterval;
+    }
+
+    public CoverageModelEMParams setModelSavingInterval(final int modelSavingInterval) {
+        this.modelSavingInterval = modelSavingInterval;
+        return this;
+    }
 }

@@ -83,6 +83,16 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      */
     private static final int DEFAULT_MIN_TARGET_BLOCK_SIZE = 5;
 
+    /**
+     *
+     */
+    private static final double INITIAL_TARGET_UNEXPLAINED_VARIANCE = 0.05;
+
+    /**
+     *
+     */
+    private static final double INITIAL_PRINCIPAL_MAP_DIAGONAL = 1.0;
+
     /**************
      * spark mode *
      **************/
@@ -168,8 +178,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         }
 
         /* Set Nd4j DType to Double in context */
-        DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE);
         Nd4j.create(1);
+        DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE);
 
         /**
          * Allocate memory for latent posterior expectations (these objects live on the driver node
@@ -247,21 +257,21 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
 
             /* create the mask for ploidy and read counts */
             double[] maskBlock = IntStream.range(0, rawReadCountBlock.length)
-                    .mapToDouble(idx -> rawReadCountBlock[idx] == 0 || germlinePloidyBlock[idx] == 0 ? 0 : 1)
+                    .mapToDouble(idx -> (int)rawReadCountBlock[idx] == 0 || (int)germlinePloidyBlock[idx] == 0 ? 0 : 1)
                     .toArray();
 
             /**
              * if a target has zero read count, set it to a finite value to avoid generating NaNs and infinities
              */
             IntStream.range(0, rawReadCountBlock.length)
-                    .filter(idx -> rawReadCountBlock[idx] == 0)
+                    .filter(idx -> (int)rawReadCountBlock[idx] == 0)
                     .forEach(idx -> rawReadCountBlock[idx] = READ_COUNT_ON_UNCOVERED_TARGETS_FIXUP_VALUE);
 
             /**
              * if a target has zero ploidy, set it to a finite value to avoid generating NaNs and infinities
              */
             IntStream.range(0, rawReadCountBlock.length)
-                    .filter(idx -> germlinePloidyBlock[idx] == 0)
+                    .filter(idx -> (int)germlinePloidyBlock[idx] == 0)
                     .forEach(idx -> germlinePloidyBlock[idx] = PLOIDY_ON_UNCOVERED_TARGETS_FIXUP_VALUE);
 
             /* add the block to list */
@@ -294,11 +304,13 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
             final INDArray newPrincipalLinearMap = Nd4j.zeros(tb.getNumTargets(), numLatents);
             if (tb.getBegIndex() < numLatents) {
                 IntStream.range(tb.getBegIndex(), FastMath.min(tb.getEndIndex(), numLatents)).forEach(ti ->
-                        newPrincipalLinearMap.getRow(ti).assign(Nd4j.zeros(1, numLatents).putScalar(0, ti, 1.0)));
+                        newPrincipalLinearMap.getRow(ti).assign(Nd4j.zeros(1, numLatents).putScalar(0, ti,
+                                INITIAL_PRINCIPAL_MAP_DIAGONAL)));
             }
             return cb.cloneWithUpdatedPrimitive("W_tl", newPrincipalLinearMap)
                     .cloneWithUpdatedPrimitive("m_t", Nd4j.zeros(1, cb.getTargetSpaceBlock().getNumTargets()))
-                    .cloneWithUpdatedPrimitive("Psi_t", Nd4j.zeros(1, cb.getTargetSpaceBlock().getNumTargets()))
+                    .cloneWithUpdatedPrimitive("Psi_t", Nd4j.ones(1, cb.getTargetSpaceBlock().getNumTargets())
+                            .mul(INITIAL_TARGET_UNEXPLAINED_VARIANCE))
                     .cloneWithUpdatedPrimitive("z_sl", Nd4j.zeros(numSamples, numLatents))
                     .cloneWithUpdatedPrimitive("zz_sll", Nd4j.zeros(numSamples, numLatents, numLatents))
                     .cloneWithUnityCopyRatio();
@@ -554,6 +566,12 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         pushToWorkers(ImmutablePair.of(newSampleMeanLogReadDepths, newSampleVarLogReadDepths),
                 (dat, cb) -> cb.cloneWithUpdatedPrimitive("log_d_s", dat.left)
                         .cloneWithUpdatedPrimitive("var_log_d_s", dat.right));
+
+//        /* DEBUG */
+//        for (int si = 0; si < numSamples; si++) {
+//            System.out.println(si + ": " + sampleMeanLogReadDepths.getDouble(si) + ", " +
+//                    sampleVarLogReadDepths.getDouble(si));
+//        }
 
         return SubroutineSignal.builder().put("error_norm", errorNormInfinity).build();
     }
@@ -901,13 +919,14 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      * @return a {@link SubroutineSignal} object containing the update size
      */
     @UpdatesRDD @CachesRDD
-    public SubroutineSignal updateTargetMeanBias() {
-        mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_M").updateTargetMeanBias());
+    public SubroutineSignal updateTargetMeanBias(final boolean neglectPCBias) {
+        mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_M").updateTargetMeanBias(neglectPCBias));
         cacheWorkers("after M-step for target mean bias");
         /* accumulate error from all nodes */
         final double errorNormInfinity = Collections.max(
                 mapWorkersAndCollect(CoverageModelEMComputeBlockNDArray::getLatestMStepSignal)
                         .stream().map(sig -> sig.getDouble("error_norm")).collect(Collectors.toList()));
+
         return SubroutineSignal.builder().put("error_norm", errorNormInfinity).build();
     }
 
@@ -1211,6 +1230,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
     @Override @EvaluatesRDD @CachesRDD
     public double[] getLogLikelihoodPerSample() {
         updateLogLikelihoodCaches();
+
         final INDArray biasPriorContrib_s = sampleBiasLatentPosteriorFirstMoments
                 .mul(sampleBiasLatentPosteriorFirstMoments).muli(-0.5).sum(1);
 
@@ -1610,6 +1630,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
 
     @Override
     public void saveModel(@Nonnull final String outputPath) {
+        logger.info("Saving the model to disk...");
         CoverageModelParametersNDArray.write(new CoverageModelParametersNDArray(processedTargetList,
                 fetchTargetMeanBias(), fetchTargetUnexplainedVariance(), fetchPrincipalLatentToTargetMap()), outputPath);
     }

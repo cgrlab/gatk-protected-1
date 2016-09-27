@@ -176,8 +176,8 @@ public class CoverageModelParametersNDArray implements Serializable {
             throw new UserException.BadInput("The model path does not exist: " + modelPathFile.getAbsolutePath());
         }
 
-        DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE);
         Nd4j.create(1);
+        DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE);
 
         final File targetListFile = new File(modelPath, TARGET_LIST_OUTPUT_FILE);
         final List<Target> targetList;

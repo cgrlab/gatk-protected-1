@@ -40,8 +40,8 @@ public final class CoverageModelEMAlgorithmNDArraySparkToggle<S extends AlleleMe
     }
 
     @Override @EvaluatesRDD @UpdatesRDD @CachesRDD
-    public SubroutineSignal updateTargetMeanBias() {
-        return ws.updateTargetMeanBias();
+    public SubroutineSignal updateTargetMeanBias(final boolean neglectPCBias) {
+        return ws.updateTargetMeanBias(neglectPCBias);
     }
 
     @Override @EvaluatesRDD @UpdatesRDD @CachesRDD
@@ -62,5 +62,10 @@ public final class CoverageModelEMAlgorithmNDArraySparkToggle<S extends AlleleMe
     @Override @EvaluatesRDD @CachesRDD
     public double[] getLogLikelihoodPerSample() {
         return ws.getLogLikelihoodPerSample();
+    }
+
+    @Override @EvaluatesRDD
+    public void saveModel(final String modelOutputPath) {
+        ws.saveModel(modelOutputPath);
     }
 }

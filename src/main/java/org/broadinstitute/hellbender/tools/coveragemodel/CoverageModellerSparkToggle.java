@@ -359,8 +359,9 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
 
         final CoverageModelEMAlgorithmNDArraySparkToggle<CopyNumberTriState> algo =
                 new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
+        final String modelOutputAbsolutePath = new File(outputPath, "model").getAbsolutePath();
         if (model == null) {
-            algo.runExpectationMaximization(performCopyRatioPosteriorCalling);
+            algo.runExpectationMaximization(performCopyRatioPosteriorCalling, modelOutputAbsolutePath);
             logger.info("Saving the model to disk...");
             ws.saveModel(new File(outputPath, "model").getAbsolutePath());
         } else {

@@ -5,6 +5,8 @@ import org.apache.commons.math3.util.Precision;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.nd4j.linalg.api.buffer.DataBuffer;
+import org.nd4j.linalg.api.buffer.util.DataTypeUtil;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.ops.transforms.Transforms;
@@ -17,6 +19,11 @@ import java.util.Arrays;
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
 public class CoverageModelEMWorkspaceNDArrayUtils {
+
+    static {
+        Nd4j.create(1);
+        DataTypeUtil.setDTypeForContext(DataBuffer.Type.DOUBLE);
+    }
 
     /**
      * INDArray to Apache
@@ -165,6 +172,10 @@ public class CoverageModelEMWorkspaceNDArrayUtils {
                                                                     @Nonnull final Logger logger) {
         return convertApacheMatrixToINDArray(getOrthogonalizerAndSorterTransformation(
                 convertINDArrayToApacheMatrix(matrix), symmetrize, logger));
+    }
+
+    public static boolean hasBadValues(final INDArray arr) {
+        return Arrays.stream(arr.data().asDouble()).anyMatch(d -> Double.isNaN(d) || Double.isInfinite(d));
     }
 
 }

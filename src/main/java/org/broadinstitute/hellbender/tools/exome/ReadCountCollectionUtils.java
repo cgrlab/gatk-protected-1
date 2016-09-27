@@ -10,6 +10,7 @@ import org.apache.commons.math3.linear.DefaultRealMatrixChangingVisitor;
 import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.stat.descriptive.rank.Median;
 import org.apache.commons.math3.stat.descriptive.rank.Percentile;
+import org.apache.commons.math3.util.FastMath;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.exome.samplenamefinder.SampleNameFinder;
@@ -561,10 +562,16 @@ public final class ReadCountCollectionUtils {
         }
     }
 
+    /**
+     * Remove columns with NaNs and infinities
+     *
+     * @param readCounts
+     * @param logger
+     * @return
+     */
     public static ReadCountCollection removeColumnsWithBadValues(final ReadCountCollection readCounts,
                                                                  final Logger logger) {
         final List<String> columnNames = readCounts.columnNames();
-        final RealMatrix counts = readCounts.counts();
 
         // Determine kept and dropped column sets.
         final Set<String> columnsToKeep = new HashSet<>(readCounts.columnNames().size());
@@ -589,13 +596,17 @@ public final class ReadCountCollectionUtils {
             final double droppedPercentage = ((double)(columnsToDrop.size()) / columnNames.size()) * 100;
             logger.info(String.format("Some columns dropped (%d out of %d, %.2f%%) as they contained bad values: %s",
                     columnsToDrop.size(), columnNames.size(), droppedPercentage,
-                    columnsToDrop.stream().collect(Collectors.joining("[", ", ", "]"))));
+                    columnsToDrop.stream().collect(Collectors.joining(", ", "[", "]"))));
             return readCounts.subsetColumns(columnsToKeep);
         }
     }
 
-    private static long countZeroes(final double[] data) {
-        return DoubleStream.of(data).filter(d -> d == 0.0).count();
+    private static long countZeroes(final double[] data, final boolean roundToInteger) {
+        if (roundToInteger) {
+            return DoubleStream.of(data).filter(d -> (int) FastMath.round(d) == 0).count();
+        } else {
+            return DoubleStream.of(data).filter(d -> d == 0.0).count();
+        }
     }
 
     /**
@@ -610,11 +621,12 @@ public final class ReadCountCollectionUtils {
      *   is no target to be dropped.
      */
     public static ReadCountCollection removeTargetsWithTooManyZeros(final ReadCountCollection readCounts,
-                                                                    final int maximumTargetZeros, final Logger logger) {
+                                                                    final int maximumTargetZeros, final boolean roundToInteger,
+                                                                    final Logger logger) {
         final RealMatrix counts = readCounts.counts();
 
         final Set<Target> targetsToKeep = IntStream.range(0, counts.getRowDimension()).boxed()
-                .filter(i -> countZeroes(counts.getRow(i)) <= maximumTargetZeros)
+                .filter(i -> countZeroes(counts.getRow(i), roundToInteger) <= maximumTargetZeros)
                 .map(i -> readCounts.targets().get(i)).collect(Collectors.toSet());
 
         final int targetsToDropCount = readCounts.targets().size() - targetsToKeep.size();
@@ -647,7 +659,7 @@ public final class ReadCountCollectionUtils {
      *   is no target to be dropped.
      */
     public static ReadCountCollection removeTotallyUncoveredTargets(final ReadCountCollection readCounts, final Logger logger) {
-        return removeTargetsWithTooManyZeros(readCounts, readCounts.columnNames().size() - 1, logger);
+        return removeTargetsWithTooManyZeros(readCounts, readCounts.columnNames().size() - 1, true, logger);
     }
 
     /**
@@ -663,12 +675,14 @@ public final class ReadCountCollectionUtils {
      */
     @VisibleForTesting
     public static ReadCountCollection removeColumnsWithTooManyZeros(final ReadCountCollection readCounts,
-                                                                    final int maximumColumnZeros, final Logger logger) {
+                                                                    final int maximumColumnZeros,
+                                                                    final boolean roundToInteger,
+                                                                    final Logger logger) {
 
         final RealMatrix counts = readCounts.counts();
 
         final Set<String> columnsToKeep = IntStream.range(0, counts.getColumnDimension()).boxed()
-                .filter(i -> countZeroes(counts.getColumn(i)) <= maximumColumnZeros)
+                .filter(i -> countZeroes(counts.getColumn(i), roundToInteger) <= maximumColumnZeros)
                 .map(i -> readCounts.columnNames().get(i)).collect(Collectors.toSet());
 
         final int columnsToDropCount = readCounts.columnNames().size() - columnsToKeep.size();

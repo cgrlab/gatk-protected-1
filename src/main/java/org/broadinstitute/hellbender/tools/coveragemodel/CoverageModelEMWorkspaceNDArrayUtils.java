@@ -111,6 +111,9 @@ public class CoverageModelEMWorkspaceNDArrayUtils {
      * @return
      */
     public static INDArray linsolve(@Nonnull final INDArray mat, @Nonnull final INDArray vec) {
+        if (mat.isScalar()) {
+            return vec.div(mat.getDouble(0));
+        }
         if (!mat.isSquare()) {
             throw new IllegalArgumentException("invalid array: must be square matrix");
         }

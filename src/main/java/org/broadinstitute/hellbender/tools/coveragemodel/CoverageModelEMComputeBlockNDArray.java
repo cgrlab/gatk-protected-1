@@ -393,34 +393,6 @@ public class CoverageModelEMComputeBlockNDArray {
      * M-step for target unexplained variance *
      ******************************************/
 
-//    /**
-//     * Calculates the first and second derivatives of the log likelihood with respect to \Psi_t:
-//     *
-//     *   \alpha_t = M./(\Sigma + \Psi + \gamma) - M.B./(\Sigma + \Psi + \gamma).^2 = -2 x grad_{\Psi} (log likelihood)
-//     *   \beta_t = M./(\Sigma + \Psi + \gamma)^2 - 2.M.B./(\Sigma + \Psi + \gamma).^3 = 2 x hessian_{\Psi} (log likelihood)
-//     *
-//     * Note: we use that fact that M_{st}^2 = M_{st} to simplify some of the algebra
-//     *
-//     * @param Psi_t old value of \Psi_t
-//     * @param M_st mask
-//     * @param Sigma_st statistical variance
-//     * @param gamma_s sample-specific unexplained variance
-//     * @param B_st B matrix
-//     * @return an {@link ImmutablePair} with \alpha_t (left) and \beta_t (right)
-//     */
-//    private ImmutablePair<INDArray, INDArray> calculatePsiNewtonIterationFactors(@Nonnull final INDArray Psi_t,
-//                                                                                 @Nonnull final INDArray M_st,
-//                                                                                 @Nonnull final INDArray Sigma_st,
-//                                                                                 @Nonnull final INDArray gamma_s,
-//                                                                                 @Nonnull final INDArray B_st) {
-//        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addRowVector(Psi_t).addiColumnVector(gamma_s));
-//        final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
-//        final INDArray alpha = totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sum(0);
-//        final INDArray beta = totalMaskedPsiInverse.mul(totalMaskedPsiInverse)
-//                .mul(M_st.sub(totalMaskedPsiInverseMulB.mul(2))).sum(0);
-//        return new ImmutablePair<>(alpha, beta);
-//    }
-
     /**
      * Create a per-target object function for Brent solver
      *
@@ -459,44 +431,6 @@ public class CoverageModelEMComputeBlockNDArray {
         final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
         return totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sumNumber().doubleValue();
     }
-
-//    /**
-//     * Solve the M-step equation for $\Psi_t$ by Newton iterations
-//     * @return
-//     */
-//    public CoverageModelEMComputeBlockNDArray updateTargetUnexplainedVarianceTargetResolvedNewton(final int maxIters,
-//                                                                                                  final double absTol) {
-//        /* fetch the required caches */
-//        final INDArray Psi_t = getINDArrayFromCache("Psi_t");
-//        final INDArray M_st = getINDArrayFromCache("M_st");
-//        final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
-//        final INDArray B_st = getINDArrayFromCache("B_st");
-//        final INDArray gamma_s = getINDArrayFromCache("gamma_s");
-//
-//        /* run Newton iterations */
-//        INDArray prevPsi = Nd4j.zeros(Psi_t.shape());
-//        INDArray newPsi;
-//        double errNormInfinity = 0;
-//        int iter = 0;
-//
-//        while (iter < maxIters) {
-//            /* perform Newton step */
-//            final ImmutablePair<INDArray, INDArray> factors = calculatePsiNewtonIterationFactors(prevPsi,
-//                    M_st, Sigma_st, gamma_s, B_st);
-//            newPsi = prevPsi.add(factors.left.div(factors.right));
-//            /* calculate error, increase iter counter, replace Psi with new value */
-//            errNormInfinity = CoverageModelEMWorkspaceNDArrayUtils.getINDArrayNormInfinity(newPsi.sub(prevPsi));
-//            iter += 1;
-//            prevPsi.assign(newPsi);
-//            if (errNormInfinity < absTol) { /* converged */
-//                return cloneWithUpdatedPrimitiveAndSignal("Psi_t", newPsi, SubroutineSignal.builder()
-//                        .put("error_norm", errNormInfinity) .put("iterations", iter).build());
-//            }
-//        }
-//        /* not converged and maximum iterations reached */
-//        throw new RuntimeException("Newton iterations for M-step of Psi did not converged " +
-//                "(error norm: " + errNormInfinity + ").");
-//    }
 
     /**
      * Solve the M-step equation for $\Psi_t$ by Newton iterations
@@ -564,9 +498,10 @@ public class CoverageModelEMComputeBlockNDArray {
 
         final INDArray newPrincipalLatentTargetMap = Nd4j.create(numTargets, numLatents);
         IntStream.range(0, numTargets).parallel().forEach(ti ->
-                newPrincipalLatentTargetMap.get(NDArrayIndex.point(ti)).assign(
-                        CoverageModelEMWorkspaceNDArrayUtils.linsolve(Q_tll.get(NDArrayIndex.point(ti)),
-                                v_tl.get(NDArrayIndex.point(ti)))));
+                newPrincipalLatentTargetMap.get(NDArrayIndex.point(ti), NDArrayIndex.all()).assign(
+                        CoverageModelEMWorkspaceNDArrayUtils.linsolve(Q_tll.get(NDArrayIndex.point(ti),
+                                NDArrayIndex.all(), NDArrayIndex.all()),
+                                v_tl.get(NDArrayIndex.point(ti), NDArrayIndex.all()))));
 
         final double errNormInfinity = CoverageModelEMWorkspaceNDArrayUtils.getINDArrayNormInfinity(newPrincipalLatentTargetMap
                 .sub(getINDArrayFromCache("W_tl")));
@@ -724,10 +659,10 @@ public class CoverageModelEMComputeBlockNDArray {
             new_z_sl = Nd4j.zeros(z_sl.shape());
             new_zz_sll = Nd4j.zeros(zz_sll.shape());
             IntStream.range(0, numSamples).parallel().forEach(si -> {
-                new_z_sl.get(NDArrayIndex.point(si)).assign(
-                        U.mmul(z_sl.get(NDArrayIndex.point(si)).transpose()).transpose());
-                new_zz_sll.get(NDArrayIndex.point(si)).assign(
-                        U.mmul(zz_sll.get(NDArrayIndex.point(si))).mmul(U.transpose()));
+                new_z_sl.get(NDArrayIndex.point(si), NDArrayIndex.all()).assign(
+                        U.mmul(z_sl.get(NDArrayIndex.point(si), NDArrayIndex.all()).transpose()).transpose());
+                new_zz_sll.get(NDArrayIndex.point(si), NDArrayIndex.all(), NDArrayIndex.all()).assign(
+                        U.mmul(zz_sll.get(NDArrayIndex.point(si), NDArrayIndex.all(), NDArrayIndex.all())).mmul(U.transpose()));
             });
         }
 

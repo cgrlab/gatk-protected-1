@@ -37,7 +37,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
 
     private static final int NUMBER_OF_PARTITIONS = 7;
 
-    private static double CNV_EVENT_PROBABILITY = 0.0001;
+    private static double CNV_EVENT_PROBABILITY = 0.001;
     private static double CNV_EVENT_MEAN_SIZE = 50;
 
     private static ReadCountCollection testReadCounts;
@@ -87,35 +87,35 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
         copyNumberPosteriorCalculator.initializeCaches(testReadCounts.targets());
     }
 
+//    @Test(dataProvider = "ploidyAnnotsDataProvider")
+//    public void localTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
+//        params = new CoverageModelEMParams();
+//                //.enableFourierRegularization()
+//                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
+//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
+//        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
+//                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
+//                1, null);
+//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
+//        algo.runExpectationMaximization(true, "/Users/mehrtash/Data/Genome/PPCA/out/blah");
+//        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah");
+//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
+//    }
+
     @Test(dataProvider = "ploidyAnnotsDataProvider")
-    public void localTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
+    public void somaticTestLocal(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
         params = new CoverageModelEMParams();
-                //.enableFourierRegularization()
-                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
+        final CoverageModelParametersNDArray model =
+                CoverageModelParametersNDArray.read("/Users/mehrtash/Data/Genome/PPCA/out/blah");
+        model.arePrincipalComponenetsOrthogonal(1e-4, true, logger);
         params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
         ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
-                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
+                sexGenotypeData, copyNumberPosteriorCalculator, params, model,
                 1, null);
         algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
-        algo.runExpectationMaximization(true, "/Users/mehrtash/Data/Genome/PPCA/out/blah");
-        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah");
-        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
+        algo.runExpectation(true);
+        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah2", null);
     }
-
-//    @Test(dataProvider = "ploidyAnnotsDataProvider")
-//    public void somaticTestLocal(@Nonnull final PloidyAnnotatedTargetCollection ploidyAnnots) {
-//        params = new CoverageModelEMParams();
-//        final CoverageModelParametersNDArray model =
-//                CoverageModelParametersNDArray.read("/Users/mehrtash/Data/Genome/PPCA/out/blah");
-//        model.arePrincipalComponenetsOrthogonal(1e-4, true, logger);
-//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
-//        ws = new CoverageModelEMWorkspaceNDArraySparkToggle(testReadCounts, ploidyAnnots,
-//                sexGenotypeData, copyNumberPosteriorCalculator, params, model,
-//                1, null);
-//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle(params, ws);
-//        algo.runExpectation(true);
-//        ws.savePosteriors("/Users/mehrtash/Data/Genome/PPCA/out/blah2", true);
-//    }
 
 //
 //    @Test(dataProvider = "ploidyAnnotsDataProvider")

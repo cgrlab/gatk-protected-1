@@ -119,8 +119,8 @@ public abstract class CoverageModelEMAlgorithm {
             int iterEStep = 0;
 
             while (iterEStep < params.getMaxEStepCycles()) {
-                double posteriorErrorNormReadDepth = 0, posteriorErrorNormSampleUnexplainedVariance = 0,
-                        posteriorErrorNormBias = 0, posteriorErrorNormCopyRatio = 0;
+                double posteriorErrorNormReadDepth, posteriorErrorNormSampleUnexplainedVariance,
+                        posteriorErrorNormBias, posteriorErrorNormCopyRatio;
 
                 runRoutine(this::updateReadDepthLatentPosteriorExpectations, s -> "N/A", "E_STEP_D", iterInfo);
                 posteriorErrorNormReadDepth = iterInfo.errorNorm;
@@ -128,17 +128,23 @@ public abstract class CoverageModelEMAlgorithm {
                 runRoutine(this::updateBiasLatentPosteriorExpectations, s -> "N/A", "E_STEP_Z", iterInfo);
                 posteriorErrorNormBias = iterInfo.errorNorm;
 
-                runRoutine(this::updateSampleUnexplainedVariance, s -> "N/A", "E_STEP_GAMMA", iterInfo);
+                runRoutine(this::updateSampleUnexplainedVariance,
+                        s -> "iters: " + s.getInteger("iterations"), "E_STEP_GAMMA", iterInfo);
                 posteriorErrorNormSampleUnexplainedVariance = iterInfo.errorNorm;
 
                 if (updateCopyRatioPosteriors) {
                     runRoutine(this::updateCopyRatioLatentPosteriorExpectations, s -> "N/A", "E_STEP_C", iterInfo);
                     posteriorErrorNormCopyRatio = iterInfo.errorNorm;
+                } else {
+                    posteriorErrorNormCopyRatio = 0;
                 }
 
                 /* calculate the maximum change of posteriors in this cycle */
-                maxPosteriorErrorNorm = Collections.max(Arrays.asList(posteriorErrorNormReadDepth,
-                        posteriorErrorNormSampleUnexplainedVariance, posteriorErrorNormBias, posteriorErrorNormCopyRatio));
+                maxPosteriorErrorNorm = Collections.max(Arrays.asList(
+                        posteriorErrorNormReadDepth,
+                        posteriorErrorNormSampleUnexplainedVariance,
+                        posteriorErrorNormBias,
+                        posteriorErrorNormCopyRatio));
 
                 /* check convergence of the E-step */
                 if (maxPosteriorErrorNorm < params.getPosteriorErrorNormTol()) {
@@ -159,11 +165,11 @@ public abstract class CoverageModelEMAlgorithm {
             /* parameter estimation */
             if (performMStep && !paramEstimationConverged) {
                 int iterMStep = 0;
-                double maxParamErrorNorm = 0;
+                double maxParamErrorNorm;
 
                 /* sequential M-steps */
                 while (iterMStep < params.getMaxMStepCycles()) {
-                    double errorNormMeanTargetBias = 0, errorNormUnexplainedVariance = 0, errorNormPrincipalMap = 0;
+                    double errorNormMeanTargetBias, errorNormUnexplainedVariance, errorNormPrincipalMap;
 
                     if (iterInfo.iter == 0) { /* neglect Wz term in the first iteration */
                         runRoutine(() -> updateTargetMeanBias(true), s -> "N/A", "M_STEP_M", iterInfo);
@@ -214,7 +220,7 @@ public abstract class CoverageModelEMAlgorithm {
 
             /* check convergence in log likelihood change */
             if (FastMath.abs(latestMStepLikelihood - prevMStepLikelihood) < params.getLogLikelihoodTolerance()) {
-                /* make sure that we have either called copy ratio posteriors, or we are not required to */
+                /* make sure that we have either already called copy ratio posteriors, or we are not required to */
                 if (!performCopyRatioPosteriorCalling || updateCopyRatioPosteriors) {
                     status = EMAlgorithmStatus.SUCCESS_LIKELIHOOD_TOL;
                     break;
@@ -253,13 +259,18 @@ public abstract class CoverageModelEMAlgorithm {
 
             /* cycle through E-step mean-field equations until they are satisfied to the desired degree */
             double maxPosteriorErrorNorm;
-            double posteriorErrorNormReadDepth, posteriorErrorNormBias, posteriorErrorNormCopyRatio;
+            double posteriorErrorNormReadDepth, posteriorErrorNormSampleUnexplainedVariance,
+                    posteriorErrorNormBias, posteriorErrorNormCopyRatio;
 
             runRoutine(this::updateReadDepthLatentPosteriorExpectations, s -> "N/A", "E_STEP_D", iterInfo);
             posteriorErrorNormReadDepth = iterInfo.errorNorm;
 
             runRoutine(this::updateBiasLatentPosteriorExpectations, s -> "N/A", "E_STEP_Z", iterInfo);
             posteriorErrorNormBias = iterInfo.errorNorm;
+
+            runRoutine(this::updateSampleUnexplainedVariance,
+                    s -> "iters: " + s.getInteger("iterations"), "E_STEP_GAMMA", iterInfo);
+            posteriorErrorNormSampleUnexplainedVariance = iterInfo.errorNorm;
 
             if (updateCopyRatioPosteriors) {
                 runRoutine(this::updateCopyRatioLatentPosteriorExpectations, s -> "N/A", "E_STEP_C", iterInfo);
@@ -268,12 +279,15 @@ public abstract class CoverageModelEMAlgorithm {
                 posteriorErrorNormCopyRatio = 0;
             }
 
+            /* calculate the maximum change of posteriors in this cycle */
+            maxPosteriorErrorNorm = Collections.max(Arrays.asList(
+                    posteriorErrorNormReadDepth,
+                    posteriorErrorNormSampleUnexplainedVariance,
+                    posteriorErrorNormBias,
+                    posteriorErrorNormCopyRatio));
+
             prevEStepLikelihood = latestEStepLikelihood;
             latestEStepLikelihood = iterInfo.logLikelihood;
-
-            /* calculate the maximum change of posteriors in this cycle */
-            maxPosteriorErrorNorm = Collections.max(Arrays.asList(posteriorErrorNormReadDepth,
-                    posteriorErrorNormBias, posteriorErrorNormCopyRatio));
 
             /* check convergence of the E-step */
             if (maxPosteriorErrorNorm < params.getPosteriorErrorNormTol() &&

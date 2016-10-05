@@ -7,7 +7,6 @@ import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPosteriorCalculator;
 import org.broadinstitute.hellbender.tools.exome.*;
-import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigGermlinePloidyAnnotation;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
 import org.broadinstitute.hellbender.utils.IntervalUtils;
@@ -186,6 +185,8 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
 
     public abstract double[] getLogLikelihoodPerSample();
 
+    public abstract double[] fetchSampleUnexplainedVariance();
+
     public abstract V fetchTargetMeanBias();
 
     public abstract V fetchTargetUnexplainedVariance();
@@ -264,14 +265,27 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         /* write log likelihood per sample to file */
         final File sampleLogLikelihoodsFile = new File(outputPath, "sample_log_likelihoods.tsv");
         final double[] sampleLogLikelihoods = getLogLikelihoodPerSample();
-        try (final TableWriter<SampleLogLikelihoodRecord> sampleLogLikelihoodRecordTableWriter =
-                     getSampleLogLikelihoodTableWriter(new FileWriter(sampleLogLikelihoodsFile))) {
+        try (final TableWriter<SampleDoubleRecord> sampleLogLikelihoodRecordTableWriter =
+                     getSampleDoubleRecordTableWriter(new FileWriter(sampleLogLikelihoodsFile), "LOG_LIKELIHOOD")) {
             for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
-                sampleLogLikelihoodRecordTableWriter.writeRecord(new SampleLogLikelihoodRecord(sampleNames.get(sampleIndex),
+                sampleLogLikelihoodRecordTableWriter.writeRecord(new SampleDoubleRecord(sampleNames.get(sampleIndex),
                         sampleLogLikelihoods[sampleIndex]));
             }
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(sampleLogLikelihoodsFile, "Could not save sample log likelihood results");
+        }
+
+        /* write sample-specific unexplained variance to file */
+        final File sampleUnexplainedVarianceFile = new File(outputPath, "sample_unexplained_variance.tsv");
+        final double[] sampleUnexplainedVariance = fetchSampleUnexplainedVariance();
+        try (final TableWriter<SampleDoubleRecord> sampleUnexplainedVarianceTableWriter =
+                     getSampleDoubleRecordTableWriter(new FileWriter(sampleUnexplainedVarianceFile), "SAMPLE_UNEXPLAINED_VARIANCE")) {
+            for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
+                sampleUnexplainedVarianceTableWriter.writeRecord(new SampleDoubleRecord(sampleNames.get(sampleIndex),
+                        sampleUnexplainedVariance[sampleIndex]));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(sampleUnexplainedVarianceFile, "Could not save sample unexplained variance results");
         }
 
         /* segmentation, vcf creation */
@@ -435,18 +449,18 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         }
     }
 
-    private static final class SampleLogLikelihoodRecord {
+    private static final class SampleDoubleRecord {
         private final String sampleName;
-        private final double logLikelihood;
+        private final double value;
 
-        public SampleLogLikelihoodRecord(final String sampleName, final double logLikelihood) {
+        public SampleDoubleRecord(final String sampleName, final double value) {
             this.sampleName = sampleName;
-            this.logLikelihood = logLikelihood;
+            this.value = value;
         }
 
         public void composeDataLine(final DataLine dataLine) {
             dataLine.append(sampleName);
-            dataLine.append(logLikelihood);
+            dataLine.append(value);
         }
     }
 
@@ -466,16 +480,17 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         };
     }
 
-    private static TableWriter<SampleLogLikelihoodRecord> getSampleLogLikelihoodTableWriter(final Writer writer) throws IOException {
+    private static TableWriter<SampleDoubleRecord> getSampleDoubleRecordTableWriter(final Writer writer,
+                                                                                    final String valueColumnName) throws IOException {
         final List<String> columnNames = new ArrayList<>();
 
         columnNames.add("SAMPLE_NAME");
-        columnNames.add("LOG_LIKELIHOOD");
+        columnNames.add(valueColumnName);
         final TableColumnCollection columns = new TableColumnCollection(columnNames);
 
-        return new TableWriter<SampleLogLikelihoodRecord>(writer, columns) {
+        return new TableWriter<SampleDoubleRecord>(writer, columns) {
             @Override
-            protected void composeLine(final SampleLogLikelihoodRecord record, final DataLine dataLine) {
+            protected void composeLine(final SampleDoubleRecord record, final DataLine dataLine) {
                 record.composeDataLine(dataLine);
             }
         };

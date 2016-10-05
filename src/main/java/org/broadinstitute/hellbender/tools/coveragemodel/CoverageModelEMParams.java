@@ -13,7 +13,6 @@ import javax.annotation.Nonnull;
 public class CoverageModelEMParams {
 
     public enum PsiSolverType {
-//        PSI_TARGET_RESOLVED_VIA_NEWTON,
         PSI_TARGET_RESOLVED_VIA_BRENT,
         PSI_ISOTROPIC_VIA_BRENT
     }
@@ -33,8 +32,11 @@ public class CoverageModelEMParams {
         RDD_JOIN
     }
 
-    public static final double PSI_BRENT_UPPER_LIMIT = 0.25;
+    public static final double PSI_BRENT_UPPER_LIMIT = 1.0;
     public static final double PSI_BRENT_MIN_STARTING_POINT = 1e-8;
+
+    public static final double GAMMA_BRENT_UPPER_LIMIT = 1.0;
+    public static final double GAMMA_BRENT_MIN_STARTING_POINT = 1e-8;
 
     private DataBuffer.Type dType = DataBuffer.Type.DOUBLE;
 
@@ -99,6 +101,13 @@ public class CoverageModelEMParams {
 
     /* M-step maximum iterations in maximizing w.r.t. W (if Fourier regularization is enabled) */
     private int wMaxIterations = 20;
+
+    /* E-step error tolerance in solving for \gamma_s */
+    private double gammaAbsTol = 1e-7;
+    private double gammaRelTol = 1e-4;
+
+    /* E-step maximum iterations in solving \gamma_s */
+    private int gammaMaxIterations = 50;
 
     private boolean checkpointingEnabled = true;
 
@@ -369,4 +378,32 @@ public class CoverageModelEMParams {
         this.modelSavingInterval = modelSavingInterval;
         return this;
     }
+
+    public double getGammaAbsoluteTolerance() {
+        return gammaAbsTol;
+    }
+
+    public double getGammaRelativeTolerance() {
+        return gammaRelTol;
+    }
+
+    public int getGammaMaximumIterations() {
+        return gammaMaxIterations;
+    }
+
+    public CoverageModelEMParams setGammaAbsoluteTolerance(final double gammaAbsTol) {
+        this.gammaAbsTol = gammaAbsTol;
+        return this;
+    }
+
+    public CoverageModelEMParams setGammaRelativeTolerance(final double gammaRelTol) {
+        this.gammaRelTol = gammaRelTol;
+        return this;
+    }
+
+    public CoverageModelEMParams setGammaMaximumIterations(final int gammaMaxIterations) {
+        this.gammaMaxIterations = gammaMaxIterations;
+        return this;
+    }
+
 }

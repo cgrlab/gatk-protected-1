@@ -371,6 +371,10 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
             evaluatedVariants.add(composeTruthOverlappingVariantContext(truth, overlappingCalls, targets));
         }
         for (final VariantContext call : callsVariants) {
+            // skip call that does not overlap a single target (the user might want to call on a smaller set of targets)
+            if (targets.targetCount(call) == 0) {
+                continue;
+            }
             final List<VariantContext> overlappingTruth = truthVariants.stream()
                     .filter(vc -> IntervalUtils.overlaps(call, vc))
                     .collect(Collectors.toList());
@@ -640,7 +644,6 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
         final double delLog10Prob = MathUtils.log10SumLog10(truthPosteriors, 0, Math.min(truthNeutralCopyNumber, truthPosteriors.length)) - totalLog10Prob;
         final double neutralLog10Prob = truthNeutralCopyNumber >= truthPosteriors.length ? Double.NEGATIVE_INFINITY : truthPosteriors[truthNeutralCopyNumber] - totalLog10Prob;
         final double dupLog10Prob = truthNeutralCopyNumber + 1 >= truthPosteriors.length ? Double.NEGATIVE_INFINITY
-
                 : MathUtils.log10SumLog10(truthPosteriors, truthNeutralCopyNumber + 1, truthPosteriors.length) - totalLog10Prob;
         if (truthCopyNumber < truthNeutralCopyNumber) {
             return -10.0 * MathUtils.approximateLog10SumLog10(neutralLog10Prob, dupLog10Prob);

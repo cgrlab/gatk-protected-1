@@ -66,7 +66,6 @@ public class CoverageModelGermlineCopyNumberPosteriorCalculator implements
         final double[] hiddenStatesLogCopyRatiosSquared = Arrays.stream(hiddenStatesLogCopyRatios)
                 .map(d -> d * d).toArray();
 
-        /* TODO NaN should not happen -- investigate */
         final List<double[]> hiddenStateProbabilities = IntStream.range(0, activeTargets.size())
                 .mapToObj(ti -> triStateHMM.hiddenStates().stream()
                         .mapToDouble(s -> FastMath.exp(result.logProbability(ti, s)))

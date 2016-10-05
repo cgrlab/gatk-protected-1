@@ -192,6 +192,10 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
 
     public abstract M fetchPrincipalLatentToTargetMap();
 
+    public abstract M fetchTotalUnexplainedVariance();
+
+    public abstract M fetchTotalNoise();
+
     public abstract ImmutablePair<M, M> fetchCopyRatioMaxLikelihoodResults();
 
     public abstract V fetchSampleMeanLogReadDepths();
@@ -312,6 +316,32 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
             }
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(copyRatioViterbiFile, "Could not save copy ratio Viterbi results");
+        }
+
+        /* save total explained variance as a matrix */
+        final File totalExplainedVarianceFile = new File(outputPath, "copy_ratio_Psi.tsv");
+        final M totalExplainedVarianceMatrix = fetchTotalUnexplainedVariance();
+        try (final TableWriter<TargetDoubleRecord> totalExplainedVarianceTableWriter = getTargetDoubleRecordTableWriter(
+                new FileWriter(totalExplainedVarianceFile), processedReadCounts.columnNames())) {
+            for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
+                totalExplainedVarianceTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
+                        getMatrixColumn(totalExplainedVarianceMatrix, targetIndex)));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(totalExplainedVarianceFile, "Could not save total unexplained variance results");
+        }
+
+        /* save total noise as a matrix */
+        final File totalNoiseFile = new File(outputPath, "copy_ratio_Wz.tsv");
+        final M totalNoiseMatrix = fetchTotalNoise();
+        try (final TableWriter<TargetDoubleRecord> totalNoiseTableWriter = getTargetDoubleRecordTableWriter(
+                new FileWriter(totalNoiseFile), processedReadCounts.columnNames())) {
+            for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
+                totalNoiseTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
+                        getMatrixColumn(totalNoiseMatrix, targetIndex)));
+            }
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(totalNoiseFile, "Could not save total noise results");
         }
     }
 

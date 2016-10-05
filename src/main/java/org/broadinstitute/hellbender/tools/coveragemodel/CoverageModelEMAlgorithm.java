@@ -119,13 +119,17 @@ public abstract class CoverageModelEMAlgorithm {
             int iterEStep = 0;
 
             while (iterEStep < params.getMaxEStepCycles()) {
-                double posteriorErrorNormReadDepth = 0, posteriorErrorNormBias = 0, posteriorErrorNormCopyRatio = 0;
+                double posteriorErrorNormReadDepth = 0, posteriorErrorNormSampleUnexplainedVariance = 0,
+                        posteriorErrorNormBias = 0, posteriorErrorNormCopyRatio = 0;
 
                 runRoutine(this::updateReadDepthLatentPosteriorExpectations, s -> "N/A", "E_STEP_D", iterInfo);
                 posteriorErrorNormReadDepth = iterInfo.errorNorm;
 
                 runRoutine(this::updateBiasLatentPosteriorExpectations, s -> "N/A", "E_STEP_Z", iterInfo);
                 posteriorErrorNormBias = iterInfo.errorNorm;
+
+                runRoutine(this::updateSampleUnexplainedVariance, s -> "N/A", "E_STEP_GAMMA", iterInfo);
+                posteriorErrorNormSampleUnexplainedVariance = iterInfo.errorNorm;
 
                 if (updateCopyRatioPosteriors) {
                     runRoutine(this::updateCopyRatioLatentPosteriorExpectations, s -> "N/A", "E_STEP_C", iterInfo);
@@ -134,7 +138,7 @@ public abstract class CoverageModelEMAlgorithm {
 
                 /* calculate the maximum change of posteriors in this cycle */
                 maxPosteriorErrorNorm = Collections.max(Arrays.asList(posteriorErrorNormReadDepth,
-                        posteriorErrorNormBias, posteriorErrorNormCopyRatio));
+                        posteriorErrorNormSampleUnexplainedVariance, posteriorErrorNormBias, posteriorErrorNormCopyRatio));
 
                 /* check convergence of the E-step */
                 if (maxPosteriorErrorNorm < params.getPosteriorErrorNormTol()) {
@@ -310,6 +314,11 @@ public abstract class CoverageModelEMAlgorithm {
      * E-step -- Update E[log(d_s)] and E[log(d_s)^2]
      */
     public abstract SubroutineSignal updateReadDepthLatentPosteriorExpectations();
+
+    /**
+     * E-step -- Update gamma_s
+     */
+    public abstract SubroutineSignal updateSampleUnexplainedVariance();
 
     /**
      * E-step -- Update E[log(c_{st})] and E[log(c_{st})^2]

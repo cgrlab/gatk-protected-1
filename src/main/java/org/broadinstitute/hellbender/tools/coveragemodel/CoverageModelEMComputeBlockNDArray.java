@@ -251,6 +251,33 @@ public class CoverageModelEMComputeBlockNDArray {
         return ImmutablePair.of(numerator, denominator);
     }
 
+    /****************************************************************************************
+     * E-step for sample-specific unexplained variance (generates data for the driver node) *
+     ****************************************************************************************/
+
+    /**
+     * @param gamma_s test value
+     * @return
+     */
+    public INDArray getTargetSummedGammaPosteriorArgument(final INDArray gamma_s) {
+        final INDArray M_st = getINDArrayFromCache("M_st");
+        final INDArray Psi_t = getINDArrayFromCache("Psi_t");
+        final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
+        final INDArray B_st = getINDArrayFromCache("B_st");
+        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addRowVector(Psi_t).addiColumnVector(gamma_s));
+        final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
+        return totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sum(1);
+    }
+
+    public double getTargetSummedGammaPosteriorArgumentSingleSample(final int sampleIndex, final double gamma) {
+        final INDArray M_st = getINDArrayFromCache("M_st").get(NDArrayIndex.point(sampleIndex));
+        final INDArray Psi_t = getINDArrayFromCache("Psi_t");
+        final INDArray Sigma_st = getINDArrayFromCache("Sigma_st").get(NDArrayIndex.point(sampleIndex));
+        final INDArray B_st = getINDArrayFromCache("B_st").get(NDArrayIndex.point(sampleIndex));
+        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addRowVector(Psi_t).addi(gamma));
+        final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
+        return totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sumNumber().doubleValue();
+    }
 
     /*************************************************************************************
      * E-step for copy ratio posterior expectations (generates data for the driver node) *
@@ -267,6 +294,7 @@ public class CoverageModelEMComputeBlockNDArray {
         final INDArray log_nu_st = getINDArrayFromCache("log_nu_st");
         final INDArray M_st = getINDArrayFromCache("M_st");
         final INDArray Psi_t = getINDArrayFromCache("Psi_t");
+        final INDArray gamma_s = getINDArrayFromCache("gamma_s");
         final INDArray log_P_st = getINDArrayFromCache("log_P_st");
         final INDArray log_d_s = getINDArrayFromCache("log_d_s");
         final INDArray m_t = getINDArrayFromCache("m_t");
@@ -276,6 +304,7 @@ public class CoverageModelEMComputeBlockNDArray {
         final INDArray n_st = Transforms.exp(log_nu_st.add(log_P_st), false);
         final INDArray mu_st = log_P_st.add(Wz_st).addiRowVector(m_t).addiColumnVector(log_d_s);
         final double[] psiArray = Psi_t.dup().data().asDouble();
+        final double[] gammaArray = gamma_s.dup().data().asDouble();
 
         return IntStream.range(0, numSamples)
                 .mapToObj(si -> {
@@ -286,7 +315,7 @@ public class CoverageModelEMComputeBlockNDArray {
                             .mapToObj(ti -> (int)currentSampleMaskArray[ti] == 0
                                     ? null
                                     : new CoverageModelCopyRatioEmissionData(currentSampleMuArray[ti],
-                                                psiArray[ti], currentSampleReadCountArray[ti]))
+                                                psiArray[ti] + gammaArray[si], currentSampleReadCountArray[ti]))
                             .collect(Collectors.toList());
                 }).collect(Collectors.toList());
     }
@@ -305,8 +334,6 @@ public class CoverageModelEMComputeBlockNDArray {
         final INDArray W_tl = getINDArrayFromCache("W_tl");
         return W_tl.transpose().mmul(W_tl);
     }
-
-
 
     /**
      *
@@ -366,49 +393,54 @@ public class CoverageModelEMComputeBlockNDArray {
      * M-step for target unexplained variance *
      ******************************************/
 
-    /**
-     * Calculates the first and second derivatives of the log likelihood with respect to \Psi_t:
-     *
-     *   \alpha_t = M./(\Sigma + \Psi) - M.B./(\Sigma + \Psi).^2 = -2 x grad_{\Psi} (log likelihood)
-     *   \beta_t = M./(\Sigma + \Psi)^2 - 2.M.B./(\Sigma + \Psi).^3 = 2 x hessian_{\Psi} (log likelihood)
-     *
-     * Note: we use that fact that M_{st}^2 = M_{st} to simplify some of the algebra
-     *
-     * @param Psi_t old value of \Psi_t
-     * @param M_st mask
-     * @param Sigma_st statistical variance
-     * @param B_st B matrix
-     * @return an {@link ImmutablePair} with \alpha_t (left) and \beta_t (right)
-     */
-    private ImmutablePair<INDArray, INDArray> calculatePsiNewtonIterationFactors(@Nonnull final INDArray Psi_t,
-                                                                                 @Nonnull final INDArray M_st,
-                                                                                 @Nonnull final INDArray Sigma_st,
-                                                                                 @Nonnull final INDArray B_st) {
-        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addRowVector(Psi_t));
-        final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
-        final INDArray alpha = totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sum(0);
-        final INDArray beta = totalMaskedPsiInverse.mul(totalMaskedPsiInverse)
-                .mul(M_st.sub(totalMaskedPsiInverseMulB.mul(2))).sum(0);
-        return new ImmutablePair<>(alpha, beta);
-    }
+//    /**
+//     * Calculates the first and second derivatives of the log likelihood with respect to \Psi_t:
+//     *
+//     *   \alpha_t = M./(\Sigma + \Psi + \gamma) - M.B./(\Sigma + \Psi + \gamma).^2 = -2 x grad_{\Psi} (log likelihood)
+//     *   \beta_t = M./(\Sigma + \Psi + \gamma)^2 - 2.M.B./(\Sigma + \Psi + \gamma).^3 = 2 x hessian_{\Psi} (log likelihood)
+//     *
+//     * Note: we use that fact that M_{st}^2 = M_{st} to simplify some of the algebra
+//     *
+//     * @param Psi_t old value of \Psi_t
+//     * @param M_st mask
+//     * @param Sigma_st statistical variance
+//     * @param gamma_s sample-specific unexplained variance
+//     * @param B_st B matrix
+//     * @return an {@link ImmutablePair} with \alpha_t (left) and \beta_t (right)
+//     */
+//    private ImmutablePair<INDArray, INDArray> calculatePsiNewtonIterationFactors(@Nonnull final INDArray Psi_t,
+//                                                                                 @Nonnull final INDArray M_st,
+//                                                                                 @Nonnull final INDArray Sigma_st,
+//                                                                                 @Nonnull final INDArray gamma_s,
+//                                                                                 @Nonnull final INDArray B_st) {
+//        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addRowVector(Psi_t).addiColumnVector(gamma_s));
+//        final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
+//        final INDArray alpha = totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sum(0);
+//        final INDArray beta = totalMaskedPsiInverse.mul(totalMaskedPsiInverse)
+//                .mul(M_st.sub(totalMaskedPsiInverseMulB.mul(2))).sum(0);
+//        return new ImmutablePair<>(alpha, beta);
+//    }
 
     /**
      * Create a per-target object function for Brent solver
+     *
      * @param targetIndex
      * @param M_st
      * @param Sigma_st
+     * @param gamma_s
      * @param B_st
      * @return
      */
     private UnivariateFunction createPsiBrentObjectiveFunction(final int targetIndex,
                                                                @Nonnull final INDArray M_st,
                                                                @Nonnull final INDArray Sigma_st,
+                                                               @Nonnull final INDArray gamma_s,
                                                                @Nonnull final INDArray B_st) {
         final INDArray M_s = M_st.get(NDArrayIndex.all(), NDArrayIndex.point(targetIndex));
         final INDArray Sigma_s = Sigma_st.get(NDArrayIndex.all(), NDArrayIndex.point(targetIndex));
         final INDArray B_s = B_st.get(NDArrayIndex.all(), NDArrayIndex.point(targetIndex));
         return psi -> {
-            final INDArray totalMaskedPsiInverse = M_s.div(Sigma_s.add(psi));
+            final INDArray totalMaskedPsiInverse = M_s.div(Sigma_s.add(gamma_s).addi(psi));
             return totalMaskedPsiInverse.mul(M_s.sub(B_s.mul(totalMaskedPsiInverse))).sumNumber().doubleValue();
         };
     }
@@ -422,47 +454,49 @@ public class CoverageModelEMComputeBlockNDArray {
         final INDArray M_st = getINDArrayFromCache("M_st");
         final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
         final INDArray B_st = getINDArrayFromCache("B_st");
-        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.add(psi));
+        final INDArray gamma_s = getINDArrayFromCache("gamma_s");
+        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addColumnVector(gamma_s).addi(psi));
         final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
         return totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sumNumber().doubleValue();
     }
 
-    /**
-     * Solve the M-step equation for $\Psi_t$ by Newton iterations
-     * @return
-     */
-    public CoverageModelEMComputeBlockNDArray updateTargetUnexplainedVarianceTargetResolvedNewton(final int maxIters,
-                                                                                                  final double absTol) {
-        /* fetch the required caches */
-        final INDArray Psi_t = getINDArrayFromCache("Psi_t");
-        final INDArray M_st = getINDArrayFromCache("M_st");
-        final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
-        final INDArray B_st = getINDArrayFromCache("B_st");
-
-        /* run Newton iterations */
-        INDArray prevPsi = Nd4j.zeros(Psi_t.shape());
-        INDArray newPsi;
-        double errNormInfinity = 0;
-        int iter = 0;
-
-        while (iter < maxIters) {
-            /* perform Newton step */
-            final ImmutablePair<INDArray, INDArray> factors = calculatePsiNewtonIterationFactors(prevPsi,
-                    M_st, Sigma_st, B_st);
-            newPsi = prevPsi.add(factors.left.div(factors.right));
-            /* calculate error, increase iter counter, replace Psi with new value */
-            errNormInfinity = CoverageModelEMWorkspaceNDArrayUtils.getINDArrayNormInfinity(newPsi.sub(prevPsi));
-            iter += 1;
-            prevPsi.assign(newPsi);
-            if (errNormInfinity < absTol) { /* converged */
-                return cloneWithUpdatedPrimitiveAndSignal("Psi_t", newPsi, SubroutineSignal.builder()
-                        .put("error_norm", errNormInfinity) .put("iterations", iter).build());
-            }
-        }
-        /* not converged and maximum iterations reached */
-        throw new RuntimeException("Newton iterations for M-step of Psi did not converged " +
-                "(error norm: " + errNormInfinity + ").");
-    }
+//    /**
+//     * Solve the M-step equation for $\Psi_t$ by Newton iterations
+//     * @return
+//     */
+//    public CoverageModelEMComputeBlockNDArray updateTargetUnexplainedVarianceTargetResolvedNewton(final int maxIters,
+//                                                                                                  final double absTol) {
+//        /* fetch the required caches */
+//        final INDArray Psi_t = getINDArrayFromCache("Psi_t");
+//        final INDArray M_st = getINDArrayFromCache("M_st");
+//        final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
+//        final INDArray B_st = getINDArrayFromCache("B_st");
+//        final INDArray gamma_s = getINDArrayFromCache("gamma_s");
+//
+//        /* run Newton iterations */
+//        INDArray prevPsi = Nd4j.zeros(Psi_t.shape());
+//        INDArray newPsi;
+//        double errNormInfinity = 0;
+//        int iter = 0;
+//
+//        while (iter < maxIters) {
+//            /* perform Newton step */
+//            final ImmutablePair<INDArray, INDArray> factors = calculatePsiNewtonIterationFactors(prevPsi,
+//                    M_st, Sigma_st, gamma_s, B_st);
+//            newPsi = prevPsi.add(factors.left.div(factors.right));
+//            /* calculate error, increase iter counter, replace Psi with new value */
+//            errNormInfinity = CoverageModelEMWorkspaceNDArrayUtils.getINDArrayNormInfinity(newPsi.sub(prevPsi));
+//            iter += 1;
+//            prevPsi.assign(newPsi);
+//            if (errNormInfinity < absTol) { /* converged */
+//                return cloneWithUpdatedPrimitiveAndSignal("Psi_t", newPsi, SubroutineSignal.builder()
+//                        .put("error_norm", errNormInfinity) .put("iterations", iter).build());
+//            }
+//        }
+//        /* not converged and maximum iterations reached */
+//        throw new RuntimeException("Newton iterations for M-step of Psi did not converged " +
+//                "(error norm: " + errNormInfinity + ").");
+//    }
 
     /**
      * Solve the M-step equation for $\Psi_t$ by Newton iterations
@@ -475,7 +509,11 @@ public class CoverageModelEMComputeBlockNDArray {
         final INDArray Psi_t = getINDArrayFromCache("Psi_t");
         final INDArray M_st = getINDArrayFromCache("M_st");
         final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
+        final INDArray gamma_s = getINDArrayFromCache("gamma_s");
         final INDArray B_st = getINDArrayFromCache("B_st");
+
+        /* we require \Psi_t + \gamma_s > 0 */
+        final double psiLowerBound = -Nd4j.min(gamma_s).getDouble(0);
 
         /*
          * If we want to leverage from parallelism, we need need to instantiate a new solver for each target and pay
@@ -484,11 +522,11 @@ public class CoverageModelEMComputeBlockNDArray {
         final List<ImmutablePair<Double, Integer>> res = IntStream.range(0, numTargets).parallel()
                 .mapToObj(ti -> {
                     final BrentSolver solver = new BrentSolver(relTol, absTol);
-                    final UnivariateFunction objFunc = createPsiBrentObjectiveFunction(ti, M_st, Sigma_st, B_st);
+                    final UnivariateFunction objFunc = createPsiBrentObjectiveFunction(ti, M_st, Sigma_st, gamma_s, B_st);
                     double newPsi;
                     try {
-                        newPsi = solver.solve(maxIters, objFunc, 0, CoverageModelEMParams.PSI_BRENT_UPPER_LIMIT,
-                                FastMath.max(CoverageModelEMParams.PSI_BRENT_MIN_STARTING_POINT,
+                        newPsi = solver.solve(maxIters, objFunc, psiLowerBound, CoverageModelEMParams.PSI_BRENT_UPPER_LIMIT,
+                                FastMath.max(psiLowerBound + CoverageModelEMParams.PSI_BRENT_MIN_STARTING_POINT,
                                         FastMath.min(Psi_t.getDouble(ti), 0.5 * CoverageModelEMParams.PSI_BRENT_UPPER_LIMIT)));
                     } catch (NoBracketingException e) { /* if a positive solution can not be found, set Psi to 0 */
                         // TODO
@@ -753,7 +791,11 @@ public class CoverageModelEMComputeBlockNDArray {
                         new String[]{},
                         new String[]{},
                         null, true)
-                .addComputableNode("var_log_d_s", /* varE[log(d_s)] */
+                .addComputableNode("var_log_d_s", /* var[log(d_s)] */
+                        new String[]{},
+                        new String[]{},
+                        null, true)
+                .addComputableNode("gamma_s", /* E[\gamma_s] */
                         new String[]{},
                         new String[]{},
                         null, true)
@@ -791,9 +833,9 @@ public class CoverageModelEMComputeBlockNDArray {
                         new String[]{"W_tl", "zz_sll"},
                         calculate_WzzWT_st, true);
 
-        cgbuilder.addComputableNode("tot_Psi_st", /* \Psi_{st} = \Psi_t + \Sigma_{st} */
+        cgbuilder.addComputableNode("tot_Psi_st", /* \Psi_{st} = \Psi_t + \Sigma_{st} + E[\gamma_s] */
                         new String[]{},
-                        new String[]{"Sigma_st", "Psi_t"},
+                        new String[]{"Sigma_st", "Psi_t", "gamma_s"},
                         calculate_tot_Psi_st, true)
                 .addComputableNode("Delta_st", /* log(n_{st}/P_{st}) - E[log(c_{st})] - E[log(d_s)] - m_t */
                         new String[]{"E_STEP_Z"},
@@ -821,7 +863,7 @@ public class CoverageModelEMComputeBlockNDArray {
                         new String[]{"Q_tll"},
                         calculate_sum_Q_ll, true)
                 .addComputableNode("B_st", /* B_{st} */
-                        new String[]{"M_STEP_PSI"},
+                        new String[]{"M_STEP_PSI", "E_STEP_GAMMA"},
                         new String[]{"Delta_st", "var_log_c_st", "var_log_d_s", "WzzWT_st", "Wz_st"},
                         calculate_B_st, true);
 
@@ -941,7 +983,10 @@ public class CoverageModelEMComputeBlockNDArray {
             new Function<Map<String, ? extends Duplicable>, Duplicable>() {
                 @Override
                 public Duplicable apply(Map<String, ? extends Duplicable> dat) {
-                    return new DuplicableNDArray(getINDArrayFromMap("Sigma_st", dat).addRowVector(getINDArrayFromMap("Psi_t", dat)));
+                    final INDArray Sigma_st = getINDArrayFromMap("Sigma_st", dat);
+                    final INDArray Psi_t = getINDArrayFromMap("Psi_t", dat);
+                    final INDArray gamma_s = getINDArrayFromMap("gamma_s", dat);
+                    return new DuplicableNDArray(Sigma_st.addRowVector(Psi_t).addiColumnVector(gamma_s));
                 }
             };
 

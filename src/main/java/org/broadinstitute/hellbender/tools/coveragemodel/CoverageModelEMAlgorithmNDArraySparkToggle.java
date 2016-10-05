@@ -35,6 +35,11 @@ public final class CoverageModelEMAlgorithmNDArraySparkToggle<S extends AlleleMe
     }
 
     @Override @EvaluatesRDD @UpdatesRDD @CachesRDD
+    public SubroutineSignal updateSampleUnexplainedVariance() {
+        return ws.updateSampleUnexplainedVariance();
+    }
+
+    @Override @EvaluatesRDD @UpdatesRDD @CachesRDD
     public SubroutineSignal updateCopyRatioLatentPosteriorExpectations() {
         return ws.updateCopyRatioLatentPosteriorExpectations();
     }

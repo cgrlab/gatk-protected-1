@@ -7,6 +7,7 @@
 \usepackage{graphicx}
 \usepackage{color}
 \usepackage{mathrsfs}
+\usepackage{bm}
 
 %Put an averaged random variable between brackets
 \newcommand{\ave}[1]{\left\langle #1 \right\rangle}
@@ -27,6 +28,7 @@
 \newcommand{\vX}{{\bf X}}
 \newcommand{\vF}{{\bf F}}
 \newcommand{\vZ}{{\bf Z}}
+\newcommand{\vgamma}{{\bm \gamma}}
 
 \newcommand{\vPsi}{{\bf \Psi}}
 \newcommand{\vSigma}{{\bf \Sigma}}
@@ -142,11 +144,11 @@ n_{st} \sim {\rm Poisson}(d_s \PP_{st} c_{st} e^{b_{st}})
 We can achieve many of the goals listed above by performing probabilistic principal component analysis (PCA) not on directly $\vn$, but rather on $\vb$. One one hand, the Poisson parameters must be positive and therefore, $\exp(\vb)$ is a well-defined parametrization of the multiplicative bias. On the other hand, a Gaussian model for $\vb$ implies a log-normal distribution for $\exp(\vb)$ which is indeed the expected distribution when the multiplicative bias arises from several independent sources according to the central limit theorem\footnote{Let $B = \prod_{j=1}^{N_B} B_j$ be the total multiplicative bias where $B_j \in (0, \infty)$ are independent components of the bias. For $N_B \gg 1$, $\ln(B) \sim \mathcal{N}$ and therefore, $B$ has a log-normal distribution.}. We model $\vb_s$ as:
 %
 \begin{align}
-\vz_s &\sim \norm(\vzero, \vI), \nonumber\\
-\vb_s &\sim \norm(\vW \vz_s + \vm, \vPsi),
+z_{s\mu} &\sim \norm(0, 1), \nonumber\\
+b_{st} &\sim \norm\left([\vW \vz_s]_t + m_t, \Psi_t + \gamma_s\right),
 \end{align}
 %
-where $\vz_s \in \mathbb{R}^D$ is a low-dimensional latent vector representing laboratory conditions, $\vW \in \mathbb{R}^{T \times D}$ is a linear map from latent space to target space, $\vm \in \mathbb{R}^T$ is the vector of mean biases, and $\vPsi \in \mathbb{R}^{T \times T}$ is a diagonal matrix of residual variance not explained by the latent features. We approximate the Poisson as a Gaussian and expand the argument of the Gaussian exponential about the mode of $b_{st}$ to quadratic order to obtain:
+where $\vz_s \in \mathbb{R}^D$ is a low-dimensional latent vector representing laboratory conditions, $\vW \in \mathbb{R}^{T \times D}$ is a linear map from latent space to target space, $\vm \in \mathbb{R}^T$ is the vector of mean biases, $\Psi_t$ is the residual variance not explained by the latent features, and finally $\gamma_s$ is the sample-specific residual variance. We approximate the Poisson as a Gaussian and expand the argument of the Gaussian exponential about the mode of $b_{st}$ to quadratic order to obtain:
 %
 \begin{equation}\label{eq:gaussian_approx_coverage}
 {\rm Poisson}(n_{st} | d_s \PP_{st} c_{st} e^{b_{st}}) \simeq \Sigma_{st} \, \norm(b_{st} | m_{st}, \Sigma_{st}),
@@ -168,7 +170,7 @@ m_{st} &\equiv \ln(n_{st}/\PP_{st}) - \ln (c_{st}) - \ln(d_s), \nonumber\\
 
 Note that $\Sigma_{st}$ can be thought of as the width of the distribution of $b_{st}$ about its maximum likelihood estimate such that in the limit $n_{st}, d_s \rightarrow \infty$, ${\rm Poisson}(n_{st} | d_s c_{st} e^{b_{st}}) \rightarrow \delta(b_{st} - b^*_{st})$ where $b^*_{st} = \lim_{n,d \rightarrow \infty} m_{st}$ is the true bias. The above approximation, while being excellent for well-covered targets (see Fig.~\ref{fig:gaussian_approx_coverage}), inevitably breaks down for targets that are uncovered {\em ex ante} in some samples, such as $Y$ chromosome targets in female samples. To this end, we define a ``sample-target mask matrix'' $\MM_{st}$ such that $\MM_{st} = 0$ if $\PP_{st} = 0$, and $\MM_{st} = 1$ if $\PP_{st} \neq 0$, and for each sample-target pair $(s,t)$, we only consider targets where the $\MM_{st} \neq 0$ in the joint likelihood function. The latter is thus written as:
 \begin{equation}
-P(n_{st}, b_{st}, z_{st}, d_s | c_{st}, \vtheta) \propto \norm(\vz_s | \vzero, \vI) \, \Big[\norm(b_{st} | (\vW \vz_s)_t + m_t, \Psi_t) \, \norm(b_{st} | m_{st}, \Sigma_{st})\Big]^{M_{st}},
+P(n_{st}, b_{st}, z_{st}, d_s | c_{st}, \vtheta) \propto \norm(\vz_s | \vzero, \vI) \, \Big[\norm(b_{st} | (\vW \vz_s)_t + m_t, \Psi_t + \gamma_s) \, \norm(b_{st} | m_{st}, \Sigma_{st})\Big]^{M_{st}},
 \end{equation}
 where $\vtheta = (\vW, \vm, \vPsi)$ denote the parameters we wish to learn. We can integrate out $b_{st}$ readily to obtain\footnote{The integration is easily performed using the identity $\int_{-\infty}^{+\infty} \norm(x | \mu_1, \sigma_1^2) \, \norm(x | \mu_2, \sigma_2^2) \, \mathrm{d}x = \norm(\mu_1 | \mu_2, \sigma_1^2 + \sigma_2^2)$.}:
 %
@@ -178,14 +180,14 @@ P(n_{st}, z_{st}, d_s | c_{st}, \vtheta) \propto \norm(\vz_s | \vzero, \vI) \, \
 \end{equation}
 where we have defined:
 \begin{equation}
-\Psi_{st} = \Psi_t + \Sigma_{st}.
+\Psi_{st} = \Psi_t + \Sigma_{st} + \gamma_s.
 \label{eq:psi_def}
 \end{equation}
 We model the copy number states (or copy ratios in case of somatic samples) using a finite state hidden Markov model (HMM). Put together, we obtain:
 \begin{align}
 P(\vn_s, \vz_s, \vc_s, d_s | \vtheta) &\propto P_\mathrm{HMM}\big(\vc_s \big|\vpi, \{\mathbf{T}_t\}\big)\, \prod_t P(n_{st}, z_{st}, d_s | c_{st}, \vtheta),\nonumber\\
 P_\mathrm{HMM}\big(\vc_s \big|\vpi, \{\mathbf{T}_t\}\big) &\equiv P(c_{s,0}|\vpi) \prod_{t=1}^{T-1}P(c_{s,t}| c_{s,t-1}, \mathbf{T}_t).
-\label{eq:complete_log_likelihood}
+\label{eq:complete_likelihood}
 \end{align}
 Here, $\vpi$ is a vector denoting the prior probabilities of various copy number states, and $\mathbf{T}_t$ is the transition matrix at target $t$. We treat HMM parameters as given (hyperparameters).\\
 
@@ -246,68 +248,95 @@ We start by writing the complete-data log likelihood (see Eq.~\ref{eq:complete_l
 \Delta_{st} \equiv&\, \ln(n_{st}/\PP_{st}) - \ln c_{st} - \ln d_s - m_t.
 \end{align}
 \end{subequations}
-We notice that the latent variables $(\vc, \vd)$ are coupled to $\vz$ due to the cross term $\Delta \vW \vz$, and $\vc$ is coupled to $\vd$ due to $\Delta^2$. These couplings result in an intractable E step. We expect the posterior distribution for $\vz$ and $\vd$ to be quite sharp near the optimal solution, provided $D_\mathrm{true} \ll T$. Therefore, we do not foresee these couplings to play a substantial role, allowing us to utilize an approximate factorized variational ansatz for the latent posterior distribution:
+We notice that the latent variables $(\vc, \vd)$ are coupled to $\vz$ due to the cross term $\Delta \vW \vz$, and $\vc$ is coupled to $\vd$ due to $\Delta^2$, and all are coupled to $\vgamma$ via $\vPsi$. These couplings result in an intractable E step. We expect the posterior distribution for $\vz$ and $\vd$ to be quite sharp near the optimal solution, provided $D_\mathrm{true} \ll T$. Therefore, we do not foresee these couplings to play a substantial role, allowing us to utilize an approximate factorized variational ansatz for the latent posterior distribution:
 \begin{equation}
-\Phi(\vc, \vz, \vd) \equiv P(\vc, \vz, \vd | \vn, \vtheta_\mathrm{old}) \simeq \Phi_c(\vc) \, \Phi(\vz) \, \Phi(\vd).
+\Phi(\vc, \vz, \vd) \equiv P(\vc, \vz, \vd | \vn, \vtheta_\mathrm{old}) \simeq \Phi_c(\vc) \, \Phi_z(\vz) \, \Phi_d(\vd) \, \Phi_\gamma(\vgamma).
 \end{equation}
 The E step requires solving the following set of mean-field self-consistency equations:
 \begin{subequations}
 \begin{align}
-\ln \Phi_c(\vc) &= \EE_{\vz, \vd}\big[\ln P(\vc, \vz, \vd | \vn, \vtheta)\big],\\
-\ln \Phi_z(\vz) &= \EE_{\vc, \vd}\big[\ln P(\vc, \vz, \vd | \vn, \vtheta)\big],\\
-\ln \Phi_d(\vd) &= \EE_{\vc, \vz}\big[\ln P(\vc, \vz, \vd | \vn, \vtheta)\big],
+\ln \Phi_c(\vc) &= \EE_{\vz, \vd, \vgamma}\big[\ln P(\vc, \vz, \vd, \vgamma | \vn, \vtheta_\mathrm{old})\big],\\
+\ln \Phi_z(\vz) &= \EE_{\vc, \vd, \vgamma}\big[\ln P(\vc, \vz, \vd, \vgamma | \vn, \vtheta_\mathrm{old})\big],\\
+\ln \Phi_d(\vd) &= \EE_{\vc, \vz, \vgamma}\big[\ln P(\vc, \vz, \vd, \vgamma | \vn, \vtheta_\mathrm{old})\big],\\
+\ln \Phi_\gamma(\vgamma) &= \EE_{\vc, \vz, \vd}\big[\ln P(\vc, \vz, \vd, \vgamma | \vn, \vtheta_\mathrm{old})\big],
 \end{align}
 \end{subequations}
 where the posterior expectation values are calculated with respect to the factorized distribution. Writing out the right hand side explicitly, we find:
+\begin{subequations}
 \begin{align}
 \label{eq:Phi_c}
-\Phi_c(\vc_s) &\propto P_\mathrm{HMM}\big(\vc_s \big|\vpi, \{\mathbf{T}_t\}\big)\prod_{t=0}^{T-1} \exp\left[- \frac{1}{2} M_{st}\Psi_{st}^{-1}\big[\ln(n_{st}/\PP_{st}) - \ln c_{st} - \EE[\ln d_s] - m_t - (\vW \EE[\vz_s])_t\big]^2\right],\\
-\Phi_z(\vz_s) &\propto \exp\left[-\frac{1}{2} \, \vz_s^T \Big(\vI + \vW^T \vM_s \vPsi_s^{-1}\vW + \lambda \vW^T \vF \vW \Big)\,\vz_s + \vW^T \vM_{s} \, \EE[\mathbf{\Delta}_{s}]\,\vz_s \right],\\
-\Phi_d(d_s) &\propto \exp\left[- \frac{1}{2} \sum_{t=0}^{T-1} M_{st}\Psi_{st}^{-1}\big[\ln(n_{st}/\PP_{st}) - \EE[\ln c_{st}] - \ln d_s - m_t - (\vW \EE[\vz_s])_t\big]^2\right].
+\Phi_c(\vc_s) &\propto P_\mathrm{HMM}\big(\vc_s \big|\vpi, \{\mathbf{T}_t\}\big)\prod_{t=0}^{T-1} \exp\left[- \frac{1}{2} M_{st}\EE[\Psi_{st}^{-1}]\big[\ln(n_{st}/\PP_{st}) - \ln c_{st} - \EE[\ln d_s] - m_t - (\vW \EE[\vz_s])_t\big]^2\right],\\
+\label{eq:Phi_z}
+\Phi_z(\vz_s) &\propto \exp\left[-\frac{1}{2} \, \vz_s^T \Big(\vI + \vW^T \vM_s \, \EE[\vPsi_s^{-1}] \, \vW + \lambda \vW^T \vF \vW \Big)\,\vz_s + \vW^T \vM_{s} \, \EE[\mathbf{\Delta}_{s}]\,\vz_s \right],\\
+\label{eq:Phi_d}
+\Phi_d(d_s) &\propto \exp\left[- \frac{1}{2} \sum_{t=0}^{T-1} M_{st}\EE[\Psi_{st}^{-1}]\big[\ln(n_{st}/\PP_{st}) - \EE[\ln c_{st}] - \ln d_s - m_t - (\vW \EE[\vz_s])_t\big]^2\right],\\
+\label{eq:Phi_gamma}
+\Phi_\gamma(\gamma_s) &\propto \exp\left[-\frac{1}{2}\sum_{t=0}^{T-1} M_{st} \left( \ln \Psi_{st} + \Psi_{st}^{-1} B_{st} \right)\right],
 \end{align}
-We have completed the squares in the first and the last equation in exchange for different normalization factors (which we do not need to calculate). We observe that: (1) $\Phi_z(\vz_s)$ is conveniently Gaussian in $\vz_s$; (2) $\Phi_d(d_s)$ admits a Gaussian distribution over $\rho \equiv \ln d$:
+\end{subequations}
+where:
+\begin{equation}
+\label{eq:B_def}
+B_{st} = \big(\vW \EE[\vz_s \vz_s^T] \vW\big)_{tt} + \EE\big[\Delta_{st}^2\big] - 2 \, \EE\big[\vDelta_{st}^T\big] \, \vW \, \EE\big[\vz_s\big].
+\end{equation}
+All expectation values are found with respect to the factorized posterior distribution. We have completed the squares Eqs.~\eqref{eq:Phi_c} and~\eqref{eq:Phi_d} in exchange for different normalization factors (which we do not need to calculate). We observe that: (1) $\Phi_z(\vz_s)$ is conveniently Gaussian in $\vz_s$; (2) $\Phi_d(d_s)$ admits a Gaussian distribution over $\rho \equiv \ln d$:
 \begin{equation}
 \Phi_\rho(\rho_s) = e^{\rho_s}\,\Phi_d(e^{\rho_s}) \propto \exp\left[ \rho_s - \frac{1}{2} \sum_{t=0}^{T-1} M_{st}\Psi_{st}^{-1}\big[\ln(n_{st}/\PP_{st}) - \EE[\ln c_{st}] - \rho_s - m_t - (\vW \EE[\vz_s])_t\big]^2\right],
 \end{equation}
-which is normalizable and does not require regularization; (3) the factorized distribution for $\vc_s$ yields an emission model that is local in the target space. These observations allow us to arrive at a simple recipe for the E step, which can be summarized as the following set of self-consistent mean-field equations:
+which is normalizable and does not require regularization; (3) the factorized distribution for $\vc_s$ yields an emission model that is local in the target space. (4) It is impossible to calculate the required posterior expectations using $\Phi_\gamma$ analytically. Since the exponents scales like $\mathcal{O}(T)$, we will employ the Laplace approximation. First, we find $\gamma^*_s$ defined as:
+\begin{equation}
+\gamma^*_s = \mathrm{argmax}_{\gamma_s}\left[-\frac{1}{2}\sum_{t=0}^{T-1} M_{st} \, \ln(\Psi_t + \Sigma_{st} + \gamma_s) + (\Psi_t + \Sigma_{st} + \gamma_s)^{-1} B_{st} \right].
+\end{equation}
+Setting the derivative to zero, we find:
+\begin{equation}
+-\frac{1}{2} \sum_{t=0}^{T-1} M_{st}\left[\frac{1}{\Psi_t + \Sigma_{st} + \gamma^*_s} - \frac{B_{st}}{(\Psi_t + \Sigma_{st} + \gamma^*_s)^2}\right] = 0.
+\end{equation}
+We solve this equation numerically. Note that $\gamma_s^* > -\mathrm{min}_t (\Psi_t + \Sigma_{st})$. The Laplace approximation of $\Phi_\gamma(\gamma_s)$ is then given as:
+\begin{align}
+\Phi_\gamma(\gamma_s) &\simeq \frac{1}{\sqrt{2\pi g_s}}\exp\left[-\frac{1}{2}\,g_s\,(\gamma_s - \gamma^*_s)^2\right],\\
+g_s &= \frac{1}{2}\sum_{t=0}^{T-1}M_{st}\left[\frac{1}{(\Psi_t + \Sigma_{st} + \gamma^*_s)^2} - \frac{2\,B_{st}}{(\Psi_t + \Sigma_{st} + \gamma^*_s)^3}\right].
+\end{align}
+As a consistency check, we must ensure $g_s > 0$. We may take one step further and assume $g_s \sim \mathcal{O}(T) \gg 1$ and set $\Phi_\gamma(\gamma_s) \rightarrow \delta(\gamma_s - \gamma^*_s)$. Adopting this approximation, we have:
+\begin{equation}\label{eq:dirac_delta_gamma_posterior}
+\EE[\Psi_{st}^{-1}] \approx (\Psi_{t} + \Sigma_{st} + \gamma_s^*)^{-1}, \qquad \EE[\ln \Psi_{st}] \approx \ln(\Psi_t + \Sigma_{st} + \gamma_s^*).
+\end{equation}
+Put together, our recipe for the E step can be summarized as solving the following set of self-consistent mean-field equations:
 \begin{subequations}
 \begin{align}
-\EE\big[\ln d_s \big] &= \frac{1 + \sum_t M_{st} \Psi_{st}^{-1}\left[\ln(n_{st}/\PP_{st}) - \EE[\ln c_{st}] - m_t - (\vW \EE[\vz_s])_t\right]}{\sum_t M_{st} \Psi_{st}^{-1}},\nonumber\\
+\EE\big[\ln d_s \big] &= \frac{1 + \sum_t M_{st} \EE[\Psi_{st}^{-1}]\left[\ln(n_{st}/\PP_{st}) - \EE[\ln c_{st}] - m_t - (\vW \EE[\vz_s])_t\right]}{\sum_t M_{st} \EE[\Psi_{st}^{-1}]},\\
+\mathrm{var}\big[\ln d_s\big] &= \Big(\sum_t M_{st} \EE[\Psi_{st}^{-1}]\Big)^{-1},\\
 \EE\big[\Delta_{st}\big] &= \ln(n_{st}/\PP_{st}) - \EE\big[\ln c_{st}\big] - \EE\big[\ln d_s\big] - m_t,\\
 \EE\big[\vz_s\big] &= \vG_s \vW^T \vM_s \vPsi_s^{-1} \EE\big[\mathbf{\Delta}_s\big],\qquad \vG_s \equiv \left( \vI + \vW^T \vM_s \vPsi_s^{-1} \vW + \lambda \vW^T \vF \vW \right)^{-1}\\
-\EE\big[\ln c_{st}\big] &= \sum_{c} \gamma_{st}(c) \ln(c),
+\EE\big[\ln c_{st}\big] &= \sum_{c} \mu_{st}(c) \ln(c),\\
+\mathrm{var}\big[\ln c_{st}\big] &= \sum_{c} \mu_{st}(c) \ln^2(c) - \EE\big[\ln c_{st}\big]^2,\\
+\EE\big[\vz_s \vz_s^T \big] &= \vG_s + \EE\big[\vz_s\big] \EE\big[\vz_s\big]^T,\\
+\EE\big[\Delta_{st}^2\big] &= \EE[\Delta_{st}]^2 + \mathrm{var}\big[\ln c_{st}\big] + \mathrm{var}\big[\ln d_{s}\big],\\
+B_{st} &= \big(\vW \EE[\vz_s \vz_s^T] \vW\big)_{tt} + \EE\big[\Delta_{st}^2\big] - 2 \, \EE\big[\vDelta_{st}^T\big] \, \vW \, \EE\big[\vz_s\big],\\
+\gamma^*_s &= \mathrm{argmax}_{\gamma_s}\left[-\frac{1}{2}\sum_{t=0}^{T-1} M_{st} \, \ln(\Psi_t + \Sigma_{st} + \gamma_s) + (\Psi_t + \Sigma_{st} + \gamma_s)^{-1} B_{st} \right],\\
+\EE[\Psi_{st}^{-1}] &= (\Psi_{t} + \Sigma_{st} + \gamma_s^*)^{-1},\\
+\EE[\ln \Psi_{st}] &= \ln(\Psi_t + \Sigma_{st} + \gamma_s^*).
 \end{align}
 \end{subequations}
-where in the last equation, the summation is over different copy number (or ratio) states, and $\gamma_{st}(c) \equiv P(c_{st} = c | \vn)$ which can be efficiently found using forward-backward algorithm. In practice, we can set $\EE[\vz_s] = \EE[\ln c_{st}] = 0$ initially and cycle through the mean-field equations for $d$, $z$ and $c$ in succession until convergence is achieved to a desired degree. Once the self-consistent solution is found, the additional quantities required for calculating the posterior expectation of $\ln P$ are easily found as:
-\begin{align}
-\EE\big[\vz_s \vz_s^T \big] &= \vG_s + \EE\big[\vz_s\big] \EE\big[\vz_s\big]^T,\nonumber\\
-\EE\big[\Delta_{st}^2\big] &= \EE[\Delta_{st}]^2 + \mathrm{var}\big[\ln c_{st}\big] + \mathrm{var}\big[\ln d_{s}\big],\nonumber\\
-\mathrm{var}\big[\ln c_{st}\big] &= \sum_{c} \gamma_{st}(c) \ln^2(c) - \EE\big[\ln c_{st}\big]^2,\nonumber\\
-\mathrm{var}\big[\ln d_s\big] &= \left(\sum_t M_{st} \Psi_{st}^{-1}\right)^{-1}
-\end{align}
+where $\mu_{st}(c) \equiv P(c_{st} = c | \vn, \vtheta_\mathrm{old})$ is the single-target copy ratio posterior which can be found efficiently using forward-backward algorithm. In practice, we can set $\EE[\vz_s] = \EE[\ln c_{st}] = \gamma_s^* = 0$ initially and cycle through the mean-field equations for $d$, $z$ and $c$ in succession until convergence is achieved to a desired degree. An unlikely consequence of the Laplace approximation for $\Phi_\gamma$ is that $\Psi_{t} + \Sigma_{st} + \gamma_s^*$ might become negative for certain targets. We safeguard the routine by strictly requiring $\gamma_s > - \mathrm{min}_t(\Psi_{t})$.
 
 In the M step, we calculate the expectation value of the complete-data log likelihood with respect to the posterior distribution, and maximize it with respect to $\vtheta$. The quantity of interest is:
 %
 \begin{align}
-\mathcal{Q}(\vtheta|\vtheta_\mathrm{old}, \valpha) =&\, \EE_{q(\vc, \vz, \vd)}\big[\ln P(\vn, \vc, \vz, \vd | \vtheta)\big]\nonumber\\
-=&\, - \frac{1}{2}\sum_{st} M_{st} \, \bigg\{\ln \Psi_{st} + \Psi_{st}^{-1}\Big[\big(\vW \EE[\vz_s \vz_s^T] \vW\big)_{tt} + \EE\big[\Delta_{st}^2\big] - 2 \, \EE\big[\vDelta_{st}^T\big] \, \vW \, \EE\big[\vz_s\big]\Big]\bigg\}\nonumber\\
+\mathcal{Q}(\vtheta|\vtheta_\mathrm{old}, \valpha) =&\, \EE_{q(\vc, \vz, \vd, \vgamma)}\big[\ln P(\vn, \vc, \vz, \vd | \vtheta)\big]\nonumber\\
+=&\, - \frac{1}{2}\sum_{st} M_{st} \, \bigg\{\ln \EE[\Psi_{st}] + \EE[\Psi_{st}^{-1}]\Big[\big(\vW \EE[\vz_s \vz_s^T] \vW\big)_{tt} + \EE\big[\Delta_{st}^2\big] - 2 \, \EE\big[\vDelta_{st}^T\big] \, \vW \, \EE\big[\vz_s\big]\Big]\bigg\}\nonumber\\
 &\,- \frac{\lambda}{2} \, \sum_s \mathrm{Tr}\Big(\vW^T \vF \vW \, \EE\big[\vz_s \vz_s^T\big]\Big) + \sum_{\mu=1}^{D}\left(\frac{T}{2} \, \ln \alpha_\mu -\frac{\alpha_\mu}{2} \sum_{t=0}^{T-1} W_{t\mu}^2  \right) + \mathrm{const.}
 \label{eq:posterior_exp_log_likelihood}
 \end{align}
 %
 Maximizing $\mathcal{Q}$ with respect to $\vm$ gives:
 \begin{align}
-m_t = \left(\sum_s \vM_s \vPsi_{s}^{-1} \right)^{-1} \sum_s \left[ \vM_s \vPsi_{s}^{-1}  (\vm_{s}  - \vW  \EE[\vz_{s}] ) \right].
+m_t = \left(\sum_s \vM_s \EE[\vPsi_{s}^{-1}] \right)^{-1} \sum_s \left[ \vM_s \EE[\vPsi_{s}^{-1}]  (\vm_{s}  - \vW  \EE[\vz_{s}] ) \right].
 \end{align}
-Maximizing $\mathcal{Q}$ with respect to $\Psi_t$ gives:
+Employing the approximation given in Eq.~\eqref{eq:dirac_delta_gamma_posterior}, maximizing $\mathcal{Q}$ with respect to $\Psi_t$ gives:
 \begin{equation}\label{eq:psi_stationarity}
-\sum_s M_{st}\left[\frac{1}{\Psi_t + \Sigma_{st}} - \frac{B_{st}}{(\Psi_t + \Sigma_{st})^2} \right] = 0,
+\sum_s M_{st}\left[\frac{1}{\Psi_t + \Sigma_{st} + \gamma^*_s} - \frac{B_{st}}{(\Psi_t + \Sigma_{st} + \gamma^*_s)^2} \right] = 0,
 \end{equation}
-where:
-\begin{equation}
-B_{st} = \big(\vW \EE[\vz_s \vz_s^T] \vW\big)_{tt} + \EE\big[\Delta_{st}^2\big] - 2 \, \EE\big[\vDelta_{st}^T\big] \, \vW \, \EE\big[\vz_s\big]
-\end{equation}
-The above nonlinear equation must be solved for each target. In practice, we found that the best approach was to use Brent solver for each target. On average, $10 \sim 15$ function calls yields the solution within a $10^{-6}$ tolerance. Newton's method required approximately 20 evaluations to converge within the same tolerance and was not stable all the time.\\
+where $B_{st}$ was defined earlier in Eq.~\eqref{eq:B_def}. The above nonlinear equation must be solved for each target. In practice, we found that the best approach was to use Brent solver for each target. On average, $10 \sim 15$ function calls yields the solution within a $10^{-6}$ tolerance. Newton's method required approximately 20 evaluations to converge within the same tolerance and was not stable all the time.\\
 
 \noindent Maximizing $\mathcal{Q}$ with respect to $\vW$ gives:
 \begin{equation}\label{eq:W_eq_reg}
@@ -315,8 +344,8 @@ The above nonlinear equation must be solved for each target. In practice, we fou
 \end{equation}
 where:
 \begin{align}
-Q_{t\mu\nu} &= \sum_s M_{st} \Psi_{st}^{-1} \, \EE\big[z_{s\mu} z_{s\nu}\big],\nonumber\\
-v_{t\mu} &= \sum_s M_{st} \Psi_{st}^{-1} \EE\big[\Delta_{st}\big]\, \EE\big[z_{s\mu}\big],\nonumber\\
+Q_{t\mu\nu} &= \sum_s M_{st} \EE[\Psi_{st}^{-1}] \, \EE\big[z_{s\mu} z_{s\nu}\big],\nonumber\\
+v_{t\mu} &= \sum_s M_{st} \, \EE[\Psi_{st}^{-1}] \, \EE\big[\Delta_{st}\big] \, \EE\big[z_{s\mu}\big],\nonumber\\
 A_{\mu\nu} &= \delta_{\mu\nu}\,\alpha_{\mu},\nonumber\\
 Z_{\mu\nu} &= \sum_{s=1}^S \EE[z_{s\mu} z_{s\nu}].
 \end{align}
@@ -339,7 +368,7 @@ The ARD coefficients $\alpha$ are determined by maximizing the log evidence, i.e
 \end{equation}
 where $\vW^*$ is the latest M step value for $\vW$. Unfortunately, the presence of the regularizer and the coupling it introduces between the targets makes calculating the required inverse matrix element a numerically challenging problem. Without the regularizer term, the inversion can be performed per-target and only within the low dimensional latent space. One approach is to extract the required matrix elements using stochastic methods. For example, one can efficiently calculate $\mathbf{w}^T \left(\ldots\right)^{-1} \mathbf{v}$ using Krylov subspace methods. If one calculates this scalar quantity for an ensemble of pairs $(\mathbf{v}, \mathbf{w})$ such that $\EE[v_{\alpha t} w_{\beta t'}] = \delta_{\alpha\beta}\delta_{\alpha\mu}\delta_{tt'}$, the ensemble average of $\mathbf{w}^T \left(\ldots\right)^{-1} \mathbf{v}$ yields the desired matrix element. Another approach is to disable the regularizer after a number of EM iterations, and enable the ARD prior instead.
 
-\subsection{On the emission probability}
+\subsection{On the emission probability (TO BE UPDATED)}
 The emission probability for the HMM is local in target and sample indices, and can be read from Eq.~\eqref{eq:Phi_c}:
 \begin{equation}
 P_\mathrm{em}(n_{st}|c_{st}) = \mathcal{N}_{st} \exp\left[- \frac{1}{2} \, \Lambda_{st} \, \big(\ln n_{st} - \mu_{st}\big)^2\right],

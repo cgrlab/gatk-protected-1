@@ -13,7 +13,7 @@ import javax.annotation.Nonnull;
 public class CoverageModelEMParams {
 
     public enum PsiSolverType {
-        PSI_TARGET_RESOLVED_VIA_NEWTON,
+//        PSI_TARGET_RESOLVED_VIA_NEWTON,
         PSI_TARGET_RESOLVED_VIA_BRENT,
         PSI_ISOTROPIC_VIA_BRENT
     }
@@ -51,13 +51,13 @@ public class CoverageModelEMParams {
     private double paramAbsTol = 1e-4;
 
     /* E-step cycle termination threshold */
-    private double posteriorErrorNormTol = 1e-3;
+    private double posteriorErrorNormTol = 1e-2;
 
     /* number of sequential maximization steps in the M step */
     private int maxMStepCycles = 1;
 
     /* maximum number of E-step cycles */
-    private int maxEStepCycles = 1; /* TODO */
+    private int maxEStepCycles = 4;
 
     /* when to start calculating copy ratio posteriors */
     private double logLikelihoodTolThresholdCopyRatioCalling = 5e-2;

@@ -18,6 +18,7 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.storage.StorageLevel;
+import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.CachesRDD;
 import org.broadinstitute.hellbender.tools.coveragemodel.annots.EvaluatesRDD;
@@ -28,6 +29,7 @@ import org.broadinstitute.hellbender.tools.coveragemodel.linalg.FourierLinearOpe
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.GeneralLinearOperator;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray.ExitStatus;
+import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedBrentSolver;
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
 import org.broadinstitute.hellbender.tools.exome.ReadCountRecord;
 import org.broadinstitute.hellbender.tools.exome.Target;
@@ -591,32 +593,56 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
 
         /* we require \Psi_t + \gamma_s > 0 */
         final double gammaLowerBound = - Nd4j.min(fetchFromWorkers("Psi_t", 1)).getDouble(0);
-        final List<Integer> funcEvals = new ArrayList<>();
-        funcEvals.add(0);
-        final double[] newGammaArray = IntStream.range(0, numSamples).mapToDouble(si -> {
-            final UnivariateFunction objFunc = gamma ->
-                    mapWorkersAndReduce(cb -> cb.getTargetSummedGammaPosteriorArgumentSingleSample(si, gamma),
-                            (a, b) -> a + b);
-            final BrentSolver solver = new BrentSolver(params.getGammaRelativeTolerance(),
-                    params.getGammaAbsoluteTolerance());
-            double newGamma = sampleUnexplainedVariance.getDouble(si);
-            try {
-                newGamma = solver.solve(params.getGammaMaximumIterations(), objFunc, gammaLowerBound,
-                        CoverageModelEMParams.GAMMA_BRENT_UPPER_LIMIT,
-                        FastMath.max(gammaLowerBound + CoverageModelEMParams.GAMMA_BRENT_MIN_STARTING_POINT,
-                                FastMath.min(newGamma, 0.5 * CoverageModelEMParams.GAMMA_BRENT_UPPER_LIMIT)));
-                funcEvals.add(solver.getEvaluations());
-            } catch (NoBracketingException e) {
-                newGamma = gammaLowerBound;
-            } catch (TooManyEvaluationsException e) {
-                throw new RuntimeException("Increase the number of Brent iterations for E-step of gamma.");
+        final java.util.function.Function<Map<Integer, Double>, Map<Integer, Double>> objFunc = arg -> {
+            if (arg.isEmpty()) { /* nothing to evaluate */
+                return Collections.emptyMap();
             }
-            return newGamma;
-        }).toArray();
+            /* get sample indices */
+            final int[] sampleIndices = arg.keySet().stream().mapToInt(i -> i).toArray();
+            /* get values of gamma for each sample index */
+            final INDArray gammaValues = Nd4j.create(Arrays.stream(sampleIndices)
+                    .mapToDouble(arg::get).toArray(), new int[] {sampleIndices.length, 1});
+            /* query */
+            final INDArray eval = mapWorkersAndReduce(cb ->
+                    cb.getTargetSummedGammaPosteriorArgumentMultiSample(sampleIndices, gammaValues), INDArray::add);
+            /* create output map */
+            final Map<Integer, Double> output = new HashMap<>();
+            IntStream.range(0, sampleIndices.length)
+                    .forEach(evalIdx -> output.put(sampleIndices[evalIdx], eval.getDouble(evalIdx)));
+            return output;
+        };
+
+        final SynchronizedBrentSolver syncSolver = new SynchronizedBrentSolver(objFunc, numSamples);
+        IntStream.range(0, numSamples)
+                .forEach(si -> {
+                    final double x0 = FastMath.max(gammaLowerBound + CoverageModelEMParams.GAMMA_BRENT_MIN_STARTING_POINT,
+                            FastMath.min(sampleUnexplainedVariance.getDouble(si), 0.5 * (CoverageModelEMParams.GAMMA_BRENT_UPPER_LIMIT - gammaLowerBound)));
+                    syncSolver.add(si, gammaLowerBound, CoverageModelEMParams.GAMMA_BRENT_UPPER_LIMIT, x0,
+                            params.getGammaAbsoluteTolerance(), params.getGammaRelativeTolerance(),
+                            params.getGammaMaximumIterations());
+                });
+        final INDArray newSampleUnexplainedVariance = Nd4j.create(numSamples, 1);
+        final List<Integer> numberOfEvaluations = new ArrayList<>(numSamples);
+        try {
+            final Map<Integer, SynchronizedBrentSolver.BrentSolverSummary> newGammaMap = syncSolver.solve();
+            newGammaMap.entrySet().stream()
+                    .forEach(entry -> {
+                        final int sampleIndex = entry.getKey();
+                        final SynchronizedBrentSolver.BrentSolverSummary summary = entry.getValue();
+                        double val = gammaLowerBound;
+                        if (summary.status.equals(SynchronizedBrentSolver.BrentSolverStatus.SUCCESS)) {
+                            val = summary.x;
+                        }
+                        newSampleUnexplainedVariance.put(sampleIndex, 0, val);
+                        numberOfEvaluations.add(summary.evaluations);
+                    });
+        } catch (final InterruptedException ex) {
+            throw new RuntimeException("The update of sample unexplained variance was interrupted -- can not continue");
+        }
 
         /* admix */
-        final INDArray newSampleUnexplainedVarianceAdmixed = Nd4j.create(newGammaArray, new int[]{numSamples, 1})
-                .muli(params.getMeanFieldAdmixingRatio())
+        final INDArray newSampleUnexplainedVarianceAdmixed = newSampleUnexplainedVariance
+                .mul(params.getMeanFieldAdmixingRatio())
                 .addi(sampleUnexplainedVariance.mul(1 - params.getMeanFieldAdmixingRatio()));
 
         /* calculate the error */
@@ -632,7 +658,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
 
         return SubroutineSignal.builder()
                 .put("error_norm", errorNormInfinity)
-                .put("iterations", Collections.max(funcEvals))
+                .put("iterations", Collections.max(numberOfEvaluations))
                 .build();
     }
 

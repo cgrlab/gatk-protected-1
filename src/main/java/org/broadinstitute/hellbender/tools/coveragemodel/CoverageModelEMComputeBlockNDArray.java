@@ -255,28 +255,34 @@ public class CoverageModelEMComputeBlockNDArray {
      * E-step for sample-specific unexplained variance (generates data for the driver node) *
      ****************************************************************************************/
 
-    /**
-     * @param gamma_s test value
-     * @return
-     */
-    public INDArray getTargetSummedGammaPosteriorArgument(final INDArray gamma_s) {
+    public INDArray getTargetSummedGammaPosteriorArgumentMultiSample(final int[] sampleIndices,
+                                                                     final INDArray gamma_s) {
         final INDArray M_st = getINDArrayFromCache("M_st");
         final INDArray Psi_t = getINDArrayFromCache("Psi_t");
         final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
         final INDArray B_st = getINDArrayFromCache("B_st");
-        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addRowVector(Psi_t).addiColumnVector(gamma_s));
-        final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
-        return totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sum(1);
-    }
 
-    public double getTargetSummedGammaPosteriorArgumentSingleSample(final int sampleIndex, final double gamma) {
-        final INDArray M_st = getINDArrayFromCache("M_st").get(NDArrayIndex.point(sampleIndex));
-        final INDArray Psi_t = getINDArrayFromCache("Psi_t");
-        final INDArray Sigma_st = getINDArrayFromCache("Sigma_st").get(NDArrayIndex.point(sampleIndex));
-        final INDArray B_st = getINDArrayFromCache("B_st").get(NDArrayIndex.point(sampleIndex));
-        final INDArray totalMaskedPsiInverse = M_st.div(Sigma_st.addRowVector(Psi_t).addi(gamma));
-        final INDArray totalMaskedPsiInverseMulB = B_st.mul(totalMaskedPsiInverse);
-        return totalMaskedPsiInverse.mul(M_st.sub(totalMaskedPsiInverseMulB)).sumNumber().doubleValue();
+        final int numQueries = sampleIndices.length;
+        if (numQueries == 0) {
+            throw new IllegalArgumentException("Can not take empty queries");
+        }
+        if (gamma_s.length() != numQueries) {
+            throw new IllegalArgumentException("The argument array must have the same length as the" +
+                    " sample index array");
+        }
+        final INDArray assembled_M_st = Nd4j.create(numQueries, numTargets);
+        final INDArray assembled_Sigma_st = Nd4j.create(numQueries, numTargets);
+        final INDArray assembled_B_st = Nd4j.create(numQueries, numTargets);
+        IntStream.range(0, numQueries)
+                .forEach(i -> {
+                    assembled_M_st.getRow(i).assign(M_st.getRow(sampleIndices[i]));
+                    assembled_Sigma_st.getRow(i).assign(Sigma_st.getRow(sampleIndices[i]));
+                    assembled_B_st.getRow(i).assign(B_st.getRow(sampleIndices[i]));
+                });
+        final INDArray totalMaskedPsiInverse = assembled_M_st.div(
+                assembled_Sigma_st.addRowVector(Psi_t).addiColumnVector(gamma_s));
+        final INDArray totalMaskedPsiInverseMulB = assembled_B_st.mul(totalMaskedPsiInverse);
+        return totalMaskedPsiInverse.mul(assembled_M_st.sub(totalMaskedPsiInverseMulB)).sum(1);
     }
 
     /*************************************************************************************

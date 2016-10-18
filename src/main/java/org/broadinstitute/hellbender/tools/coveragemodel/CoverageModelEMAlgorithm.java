@@ -5,7 +5,6 @@ import org.apache.commons.math3.util.FastMath;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.utils.Utils;
-import org.nd4j.linalg.api.ndarray.INDArray;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -28,6 +27,8 @@ public abstract class CoverageModelEMAlgorithm {
     protected final CoverageModelEMParams params;
 
     protected EMAlgorithmStatus status;
+
+    public static final boolean ADAPTIVE_PSI_SOLVER_MODE_SWITCHING = true;
 
     public enum EMAlgorithmStatus {
         TBD(false, "Status is not determined yet."),
@@ -93,12 +94,14 @@ public abstract class CoverageModelEMAlgorithm {
 
     public void runExpectationMaximization(final boolean performCopyRatioPosteriorCalling,
                                            @Nullable final String modelOutputAbsolutePath) {
-        /* if copy ratio posterior calling is enabled, the first few iterations need to be robust */
-        if (!this.params.getPsiSolverType().equals(CoverageModelEMParams.PsiSolverType.PSI_ISOTROPIC_VIA_BRENT) &&
-                performCopyRatioPosteriorCalling) {
-            this.params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverType.PSI_ISOTROPIC_VIA_BRENT);
-            logger.info("Overriding the requested unexplained variance solver to " +
-                    CoverageModelEMParams.PsiSolverType.PSI_ISOTROPIC_VIA_BRENT.name());
+        if (ADAPTIVE_PSI_SOLVER_MODE_SWITCHING) {
+            /* if copy ratio posterior calling is enabled, the first few iterations need to be robust */
+            if (!this.params.getPsiSolverMode().equals(CoverageModelEMParams.PsiSolverMode.PSI_ISOTROPIC) &&
+                    performCopyRatioPosteriorCalling) {
+                this.params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverMode.PSI_ISOTROPIC);
+                logger.info("Overriding the requested unexplained variance solver to " +
+                        CoverageModelEMParams.PsiSolverMode.PSI_ISOTROPIC.name());
+            }
         }
 
         showIterationHeader();
@@ -109,6 +112,7 @@ public abstract class CoverageModelEMAlgorithm {
         double latestMStepLikelihood = Double.NEGATIVE_INFINITY;
         final IterationInfo iterInfo = new IterationInfo(Double.NEGATIVE_INFINITY, 0, 0);
         boolean updateCopyRatioPosteriors = false;
+        boolean updateGammaPosteriors = false;
         boolean paramEstimationConverged = false;
         boolean performMStep = true;
 
@@ -128,9 +132,13 @@ public abstract class CoverageModelEMAlgorithm {
                 runRoutine(this::updateBiasLatentPosteriorExpectations, s -> "N/A", "E_STEP_Z", iterInfo);
                 posteriorErrorNormBias = iterInfo.errorNorm;
 
-                runRoutine(this::updateSampleUnexplainedVariance,
-                        s -> "iters: " + s.getInteger("iterations"), "E_STEP_GAMMA", iterInfo);
-                posteriorErrorNormSampleUnexplainedVariance = iterInfo.errorNorm;
+                if (updateGammaPosteriors) {
+                    runRoutine(this::updateSampleUnexplainedVariance,
+                            s -> "iters: " + s.getInteger("iterations"), "E_STEP_GAMMA", iterInfo);
+                    posteriorErrorNormSampleUnexplainedVariance = iterInfo.errorNorm;
+                } else {
+                    posteriorErrorNormSampleUnexplainedVariance = 0;
+                }
 
                 if (updateCopyRatioPosteriors) {
                     runRoutine(this::updateCopyRatioLatentPosteriorExpectations, s -> "N/A", "E_STEP_C", iterInfo);
@@ -211,10 +219,12 @@ public abstract class CoverageModelEMAlgorithm {
                         (latestMStepLikelihood - prevMStepLikelihood) > 0 &&
                         (latestMStepLikelihood - prevMStepLikelihood) < params.getLogLikelihoodTolThresholdCopyRatioCalling()) {
                     updateCopyRatioPosteriors = true;
-                    logger.info("Partial convergence achieved; will start calling copy ratio posteriors after the current" +
-                            " iteration; also, will switch to " +
-                            CoverageModelEMParams.PsiSolverType.PSI_TARGET_RESOLVED_VIA_BRENT.name());
-                    params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverType.PSI_TARGET_RESOLVED_VIA_BRENT);
+                    updateGammaPosteriors = true;
+                    logger.info("Partial convergence achieved; will start updating copy ratio posteriors and gamma after the current" +
+                            " iteration");
+                    if (ADAPTIVE_PSI_SOLVER_MODE_SWITCHING) {
+                        params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverMode.PSI_TARGET_RESOLVED);
+                    }
                 }
             }
 

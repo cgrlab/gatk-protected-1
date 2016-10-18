@@ -1,9 +1,12 @@
 package org.broadinstitute.hellbender.tools.coveragemodel.math;
 
+import org.apache.commons.math3.analysis.solvers.AbstractUnivariateSolver;
 import org.apache.commons.math3.analysis.solvers.BrentSolver;
 import org.apache.commons.math3.exception.NoBracketingException;
 import org.apache.commons.math3.exception.TooManyEvaluationsException;
 import org.apache.commons.math3.util.FastMath;
+import org.broadinstitute.hdf5.Utils;
+import org.broadinstitute.hellbender.utils.param.ParamUtils;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,9 +16,10 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
- * This class implements a synchronous Brent solver for solving multiple independent equations.
+ * This class implements a synchronous univariate solver for solving multiple independent equations.
  * It is to be used in situations where function queries have a costly overhead, though, simultaneous
  * queries of multiple functions have the same overhead as single queries.
  *
@@ -34,10 +38,10 @@ import java.util.stream.Collectors;
  * Consider te ideal situation where function evaluations are infinitely cheap, however, each query has
  * a considerable overhead time of \tau. Also, let us assume that the overhead of simultaneously
  * querying {f_1(x_1), ..., f_N(x_N)} is the same as that of a single query, i.e. f_i(x_i). If the
- * Brent solver requires k queries on average, the overhead cost of the sequential approach is
+ * univariate solver requires k queries on average, the overhead cost of the sequential approach is
  * O(k N \tau). By making simultaneous queries, this class reduces the overhead to O(k \tau).
  *
- * This is achieved by instantiating N threads for the N Brent solvers, accumulating their queries
+ * This is achieved by instantiating N threads for the N univariate solvers, accumulating their queries
  * and suspending them until all threads announce their required query.
  *
  * TODO In the current implementation, we make a thread for each solver. This is OK if the number
@@ -46,7 +50,7 @@ import java.util.stream.Collectors;
  *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
-public final class SynchronizedBrentSolver {
+public final class SynchronizedUnivariateSolver {
 
     /**
      * Default value for the absolute accuracy of function evaluations
@@ -74,9 +78,11 @@ public final class SynchronizedBrentSolver {
     private final Function<Map<Integer, Double>, Map<Integer, Double>> func;
 
     /**
-     * A list of Brent solver jobs
+     * A list of solver jobs
      */
-    private final List<BrentJobDescription> jobDescriptions;
+    private final List<UnivariateSolverJobDescription> jobDescriptions;
+    private final List<UnivariateSolverDescription> solverDescriptions;
+    private final Function<UnivariateSolverDescription, AbstractUnivariateSolver> solverFactory;
     private final Set<Integer> jobIndices;
 
     private final Lock resultsLock = new ReentrantLock();
@@ -90,19 +96,23 @@ public final class SynchronizedBrentSolver {
      * @param numberOfQueriesBeforeCalling Number of queries before making a function call (the default value is
      *                                     the number of equations)
      */
-    public SynchronizedBrentSolver(final Function<Map<Integer, Double>, Map<Integer, Double>> func,
-                                   final int numberOfQueriesBeforeCalling) {
-        this.func = func;
-        this.numberOfQueriesBeforeCalling = numberOfQueriesBeforeCalling;
+    public SynchronizedUnivariateSolver(final Function<Map<Integer, Double>, Map<Integer, Double>> func,
+                                        final Function<UnivariateSolverDescription, AbstractUnivariateSolver> solverFactory,
+                                        final int numberOfQueriesBeforeCalling) {
+        this.func = Utils.nonNull(func);
+        this.solverFactory = Utils.nonNull(solverFactory);
+        this.numberOfQueriesBeforeCalling = ParamUtils.isPositive(numberOfQueriesBeforeCalling, "Number of queries" +
+                " before calling function evaluations must be positive");
 
         queries = new ConcurrentHashMap<>(numberOfQueriesBeforeCalling);
         results = new ConcurrentHashMap<>(numberOfQueriesBeforeCalling);
         jobDescriptions = new ArrayList<>();
+        solverDescriptions = new ArrayList<>();
         jobIndices = new HashSet<>();
     }
 
     /**
-     * Add a Brent solver job
+     * Add a solver jobDescription
      *
      * @param index a unique index for the equation
      * @param min lower bound of the root
@@ -117,19 +127,19 @@ public final class SynchronizedBrentSolver {
                final double absoluteAccuracy, final double relativeAccuracy,
                final double functionValueAccuracy, final int maxEval) {
         if (jobIndices.contains(index)) {
-            throw new IllegalArgumentException("A job with index " + index + " already exists; job indices must" +
+            throw new IllegalArgumentException("A jobDescription with index " + index + " already exists; jobDescription indices must" +
                     " be unique");
         }
         if (x0 <= min || x0 >= max) {
             throw new IllegalArgumentException(String.format("The initial guess \"%f\" for equation number \"%d\" is" +
                     " must lie inside the provided search bracket [%f, %f]", x0, index, min, max));
         }
-        jobDescriptions.add(new BrentJobDescription(index, min, max, x0, absoluteAccuracy,
-                relativeAccuracy, functionValueAccuracy, maxEval));
+        jobDescriptions.add(new UnivariateSolverJobDescription(index, min, max, x0, maxEval));
+        solverDescriptions.add(new UnivariateSolverDescription(absoluteAccuracy, relativeAccuracy, functionValueAccuracy));
     }
 
     /**
-     * Add a Brent solver job using the default function accuracy {@link #DEFAULT_FUNCTION_ACCURACY}
+     * Add a solver jobDescription using the default function accuracy {@link #DEFAULT_FUNCTION_ACCURACY}
      *
      * @param index a unique index for the equation
      * @param min lower bound of the root
@@ -151,13 +161,15 @@ public final class SynchronizedBrentSolver {
      * @return a map from equation indices to the summary of results
      * @throws InterruptedException if any of the solver threads are interrupted
      */
-    public Map<Integer, BrentSolverSummary> solve() throws InterruptedException {
+    public Map<Integer, UnivariateSolverSummary> solve() throws InterruptedException {
         if (jobDescriptions.isEmpty()) {
             return Collections.emptyMap();
         }
-        final Map<Integer, BrentSolverWorker> solvers = new HashMap<>(jobDescriptions.size());
+        final Map<Integer, UnivariateSolverWorker> solvers = new HashMap<>(jobDescriptions.size());
         solversCountDownLatch = new CountDownLatch(jobDescriptions.size());
-        jobDescriptions.stream().forEach(job -> solvers.put(job.index, new BrentSolverWorker(job)));
+        IntStream.range(0, jobDescriptions.size())
+                .forEach(jobIdx -> solvers.put(jobDescriptions.get(jobIdx).getIndex(),
+                        new UnivariateSolverWorker(solverDescriptions.get(jobIdx), jobDescriptions.get(jobIdx))));
 
         /* start solver threads */
         solvers.values().forEach(worker -> new Thread(worker).start());
@@ -211,28 +223,7 @@ public final class SynchronizedBrentSolver {
         }
     }
 
-    /**
-     * This class stores the description of a {@link BrentSolver} job
-     */
-    private final class BrentJobDescription {
-        final int index, maxEval;
-        final double min, max, x0, absoluteAccuracy, relativeAccuracy, functionValueAccuracy;
-
-        BrentJobDescription(final int index, final double min, final double max, final double x0,
-                            final double absoluteAccuracy, final double relativeAccuracy,
-                            final double functionValueAccuracy, final int maxEval) {
-            this.index = index;
-            this.min = min;
-            this.max = max;
-            this.x0 = x0;
-            this.absoluteAccuracy = absoluteAccuracy;
-            this.relativeAccuracy = relativeAccuracy;
-            this.functionValueAccuracy = functionValueAccuracy;
-            this.maxEval = maxEval;
-        }
-    }
-
-    public enum BrentSolverStatus {
+    public enum UnivariateSolverStatus {
         /**
          * Solution could not be bracketed
          */
@@ -255,14 +246,14 @@ public final class SynchronizedBrentSolver {
     }
 
     /**
-     * Stores the summary of a {@link BrentSolver} job
+     * Stores the summary of a univariate solver jobDescription
      */
-    public final class BrentSolverSummary {
+    public final class UnivariateSolverSummary {
         public final double x;
         public final int evaluations;
-        public final BrentSolverStatus status;
+        public final UnivariateSolverStatus status;
 
-        BrentSolverSummary(final double x, final int evaluations, final BrentSolverStatus status) {
+        UnivariateSolverSummary(final double x, final int evaluations, final UnivariateSolverStatus status) {
             this.x = x;
             this.evaluations = evaluations;
             this.status = status;
@@ -272,49 +263,50 @@ public final class SynchronizedBrentSolver {
     /**
      * A runnable version of {@link BrentSolver}
      */
-    private final class BrentSolverWorker implements Runnable {
-        final BrentSolver solver;
-        final BrentJobDescription job;
-        BrentSolverStatus status;
+    private final class UnivariateSolverWorker implements Runnable {
+        final AbstractUnivariateSolver solver;
+        final UnivariateSolverJobDescription jobDescription;
+        UnivariateSolverStatus status;
         double sol;
 
-        BrentSolverWorker(final BrentJobDescription job) {
-            solver = new BrentSolver(job.relativeAccuracy, job.absoluteAccuracy, job.functionValueAccuracy);
-            this.job = job;
-            status = BrentSolverStatus.TBD;
+        UnivariateSolverWorker(final UnivariateSolverDescription solverDescription,
+                               final UnivariateSolverJobDescription jobDescription) {
+            solver = solverFactory.apply(solverDescription);
+            this.jobDescription = jobDescription;
+            status = UnivariateSolverStatus.TBD;
         }
 
         @Override
         public void run() {
             double sol;
             try {
-                sol = solver.solve(job.maxEval, x -> {
+                sol = solver.solve(jobDescription.getMaxEvaluations(), x -> {
                     final double value;
                     try {
-                        value = evaluate(job.index, x);
+                        value = evaluate(jobDescription.getIndex(), x);
                     } catch (final InterruptedException ex) {
                         throw new RuntimeException(String.format("Evaluation of equation (n=%d) was interrupted --" +
-                                " can not continue", job.index));
+                                " can not continue", jobDescription.getIndex()));
                     }
                     return value;
-                }, job.min, job.max, job.x0);
+                }, jobDescription.getMin(), jobDescription.getMax(), jobDescription.getInitialGuess());
             } catch (final NoBracketingException ex) {
-                status = BrentSolverStatus.NO_BRACKETING;
+                status = UnivariateSolverStatus.NO_BRACKETING;
                 sol = Double.NaN;
             } catch (final TooManyEvaluationsException ex) {
-                status = BrentSolverStatus.TOO_MANY_EVALUATIONS;
+                status = UnivariateSolverStatus.TOO_MANY_EVALUATIONS;
                 sol = Double.NaN;
             }
-            if (status.equals(BrentSolverStatus.TBD)) {
-                status = BrentSolverStatus.SUCCESS;
+            if (status.equals(UnivariateSolverStatus.TBD)) {
+                status = UnivariateSolverStatus.SUCCESS;
             }
             this.sol = sol;
             solversCountDownLatch.countDown();
             fetchResults();
         }
 
-        BrentSolverSummary getSummary() {
-            return new BrentSolverSummary(sol, solver.getEvaluations(), status);
+        UnivariateSolverSummary getSummary() {
+            return new UnivariateSolverSummary(sol, solver.getEvaluations(), status);
         }
     }
 

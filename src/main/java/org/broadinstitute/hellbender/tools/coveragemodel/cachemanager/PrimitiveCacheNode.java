@@ -53,6 +53,15 @@ public final class PrimitiveCacheNode extends CacheNode {
     }
 
     @Override
+    public PrimitiveCacheNode duplicate() {
+        if (value != null && !value.isNull()) {
+            return new PrimitiveCacheNode(getKey(), getTags(), value.deepCopy());
+        } else {
+            return new PrimitiveCacheNode(getKey(), getTags(), null);
+        }
+    }
+
+    @Override
     public PrimitiveCacheNode duplicateWithUpdatedValue(final Duplicable newValue) {
         return new PrimitiveCacheNode(getKey(), getTags(), newValue);
     }

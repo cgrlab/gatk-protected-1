@@ -116,8 +116,20 @@ public final class ComputableCacheNode extends CacheNode {
         }
     }
 
+    @Override
+    public ComputableCacheNode duplicate() {
+        if (cacheEvals && cachedValue != null && !cachedValue.isNull()) {
+            return new ComputableCacheNode(getKey(), getTags(), getParents(), func, true, cachedValue.deepCopy(), isCacheCurrent);
+        } else {
+            return new ComputableCacheNode(getKey(), getTags(), getParents(), func, cacheEvals, null, isCacheCurrent);
+        }
+    }
+
     /**
      * Make a partial clone of the node with a new value; the new value is copied by reference
+     *
+     * TODO DEBUG newValue.deepCopy()
+     *
      * @param newValue the cache value to be replaced with the old value
      * @return
      */

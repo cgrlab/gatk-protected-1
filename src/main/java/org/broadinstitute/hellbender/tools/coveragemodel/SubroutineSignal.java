@@ -41,27 +41,23 @@ public final class SubroutineSignal implements Serializable {
     }
 
     public double getDouble(final String key) {
-        return (double)result.get(key);
+        return result.containsKey(key) ? (double)result.get(key) : 0;
     }
 
     public int getInteger(final String key) {
-        return (int)result.get(key);
+        return result.containsKey(key) ? (int)result.get(key) : 0;
     }
 
     public String getString(final String key) {
-        return (String)result.get(key);
+        return result.containsKey(key) ? (String)result.get(key) : null;
     }
 
     public INDArray getINDArray(final String key) {
-        return (INDArray) result.get(key);
+        return result.containsKey(key) ? (INDArray) result.get(key) : null;
     }
 
-    public boolean getBoolean(final String key) {
-        return (boolean)result.get(key);
-    }
-
-    public Object getObject(final String key) {
-        return result.get(key);
+    public Object getObject(final String key){
+        return result.containsKey(key) ? result.get(key) : null;
     }
 
     public static SubroutineSignalBuilder builder() {

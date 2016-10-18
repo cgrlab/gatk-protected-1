@@ -1,8 +1,11 @@
 package org.broadinstitute.hellbender.tools.coveragemodel;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.math3.analysis.solvers.AbstractUnivariateSolver;
+import org.apache.commons.math3.analysis.solvers.BrentSolver;
 import org.apache.commons.math3.util.FastMath;
-import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedBrentSolver;
+import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedUnivariateSolver;
+import org.broadinstitute.hellbender.tools.coveragemodel.math.UnivariateSolverDescription;
 import org.broadinstitute.hellbender.utils.test.BaseTest;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -14,7 +17,11 @@ import java.util.stream.Collectors;
 /**
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
-public class SynchronizedBrentSolverUnitTest extends BaseTest {
+public class SynchronizedUnivariateSolverUnitTest extends BaseTest {
+
+    private static final java.util.function.Function<UnivariateSolverDescription,
+            AbstractUnivariateSolver> SOLVER_FACTORY = desc -> new BrentSolver(desc.getAbsoluteAccuracy(),
+            desc.getRelativeAccuracy(), desc.getFunctionValueAccuracy());
 
     @Test
     public void testFewEquations() {
@@ -35,13 +42,14 @@ public class SynchronizedBrentSolverUnitTest extends BaseTest {
                         }
                     }).collect(Collectors.toMap(p -> p.left, p -> p.right));
 
-        final SynchronizedBrentSolver solver = new SynchronizedBrentSolver(func, 3);
+
+        final SynchronizedUnivariateSolver solver = new SynchronizedUnivariateSolver(func, SOLVER_FACTORY, 3);
         solver.add(1, 0, 4, 3.5, 1e-7, 1e-7, 20);
         solver.add(2, 0, 3, 0.5, 1e-7, 1e-7, 20);
         solver.add(3, 0, 10, 0.6, 1e-7, 1e-7, 20);
 
         try {
-            final Map<Integer, SynchronizedBrentSolver.BrentSolverSummary> sol = solver.solve();
+            final Map<Integer, SynchronizedUnivariateSolver.UnivariateSolverSummary> sol = solver.solve();
             Assert.assertEquals(sol.get(1).x, 1.732050, 1e-6);
             Assert.assertEquals(sol.get(2).x, 1.587401, 1e-6);
             Assert.assertEquals(sol.get(3).x, 5.000000, 1e-6);
@@ -64,12 +72,12 @@ public class SynchronizedBrentSolverUnitTest extends BaseTest {
                             final double x = entry.getValue();
                             return ImmutablePair.of(index, FastMath.pow(x, index) - index);
                         }).collect(Collectors.toMap(p -> p.left, p -> p.right));
-        final SynchronizedBrentSolver solver = new SynchronizedBrentSolver(func, numEquations);
+        final SynchronizedUnivariateSolver solver = new SynchronizedUnivariateSolver(func, SOLVER_FACTORY, numEquations);
         for (int n = 1; n <= numEquations; n++) {
             solver.add(n, 0, 2, 0.5, 1e-7, 1e-7, 100);
         }
         try {
-            final Map<Integer, SynchronizedBrentSolver.BrentSolverSummary> sol = solver.solve();
+            final Map<Integer, SynchronizedUnivariateSolver.UnivariateSolverSummary> sol = solver.solve();
             for (int n = 1; n <= numEquations; n++) {
                 Assert.assertEquals(sol.get(n).x, FastMath.pow(n, 1.0/n), 1e-6);
             }

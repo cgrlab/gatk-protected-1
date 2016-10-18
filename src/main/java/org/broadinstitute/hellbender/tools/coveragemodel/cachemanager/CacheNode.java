@@ -41,6 +41,11 @@ public abstract class CacheNode {
         throw new UnsupportedOperationException();
     }
 
+    public CacheNode duplicate()
+            throws UnsupportedOperationException {
+        throw new UnsupportedOperationException();
+    }
+
     public CacheNode(@Nonnull final String key,
                      @Nonnull final Collection<String> tags,
                      @Nonnull final Collection<String> parents) {

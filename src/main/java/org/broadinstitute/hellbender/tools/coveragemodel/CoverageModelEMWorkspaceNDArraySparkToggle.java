@@ -6,7 +6,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.math3.analysis.UnivariateFunction;
-import org.apache.commons.math3.analysis.solvers.BrentSolver;
+import org.apache.commons.math3.analysis.solvers.AbstractUnivariateSolver;
 import org.apache.commons.math3.exception.NoBracketingException;
 import org.apache.commons.math3.exception.TooManyEvaluationsException;
 import org.apache.commons.math3.util.FastMath;
@@ -29,7 +29,8 @@ import org.broadinstitute.hellbender.tools.coveragemodel.linalg.FourierLinearOpe
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.GeneralLinearOperator;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray.ExitStatus;
-import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedBrentSolver;
+import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedUnivariateSolver;
+import org.broadinstitute.hellbender.tools.coveragemodel.math.UnivariateSolverDescription;
 import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
 import org.broadinstitute.hellbender.tools.exome.ReadCountRecord;
 import org.broadinstitute.hellbender.tools.exome.Target;
@@ -87,12 +88,14 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
     /**
      *
      */
-    private static final double INITIAL_TARGET_UNEXPLAINED_VARIANCE = 0.02;
+    private static final double INITIAL_TARGET_UNEXPLAINED_VARIANCE = 0.0;
 
     /**
      *
      */
     private static final double INITIAL_PRINCIPAL_MAP_DIAGONAL = 1.0;
+
+    public static final double DEFAULT_FUNCTION_EVALUATION_ACCURACY = 1e-15;
 
     /**************
      * spark mode *
@@ -337,6 +340,9 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         final int numSamples = this.numSamples;
         final int numLatents = params.getNumLatents();
 
+        /* sample-specific unexplained variances can not be lower than the following value */
+        final double gammaLowerBound = 0.0;
+
         if (sparkContextIsAvailable) {
             final Broadcast<CoverageModelParametersNDArray> broadcastedModel = ctx.broadcast(model);
             mapWorkers(cb -> {
@@ -346,7 +352,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                         .cloneWithUpdatedPrimitive("Psi_t", broadcastedModel.getValue().getTargetUnexplainedVarianceOnTargetBlock(tb))
                         .cloneWithUpdatedPrimitive("z_sl", Nd4j.zeros(numSamples, numLatents))
                         .cloneWithUpdatedPrimitive("zz_sll", Nd4j.zeros(numSamples, numLatents, numLatents))
-                        .cloneWithUpdatedPrimitive("gamma_s", Nd4j.zeros(numSamples, 1))
+                        .cloneWithUpdatedPrimitive("gamma_s", Nd4j.ones(numSamples, 1).muli(gammaLowerBound))
                         .cloneWithUnityCopyRatio();
             });
         } else {
@@ -357,10 +363,13 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                         .cloneWithUpdatedPrimitive("Psi_t", model.getTargetUnexplainedVarianceOnTargetBlock(tb))
                         .cloneWithUpdatedPrimitive("z_sl", Nd4j.zeros(numSamples, numLatents))
                         .cloneWithUpdatedPrimitive("zz_sll", Nd4j.zeros(numSamples, numLatents, numLatents))
-                        .cloneWithUpdatedPrimitive("gamma_s", Nd4j.zeros(numSamples, 1))
+                        .cloneWithUpdatedPrimitive("gamma_s", Nd4j.ones(numSamples, 1).muli(gammaLowerBound))
                         .cloneWithUnityCopyRatio();
             });
         }
+
+        /* update the local copy of gamma as well */
+        sampleUnexplainedVariance.assign(Nd4j.ones(numSamples, 1).muli(gammaLowerBound));
 
         if (params.fourierRegularizationEnabled()) {
             mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_W_REG"));
@@ -591,8 +600,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("E_STEP_GAMMA"));
         cacheWorkers("after E-step for sample unexplained variance initialization");
 
-        /* we require \Psi_t + \gamma_s > 0 */
-        final double gammaLowerBound = - Nd4j.min(fetchFromWorkers("Psi_t", 1)).getDouble(0);
+        final double gammaLowerBound = 0.0;
         final java.util.function.Function<Map<Integer, Double>, Map<Integer, Double>> objFunc = arg -> {
             if (arg.isEmpty()) { /* nothing to evaluate */
                 return Collections.emptyMap();
@@ -612,27 +620,26 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
             return output;
         };
 
-        final SynchronizedBrentSolver syncSolver = new SynchronizedBrentSolver(objFunc, numSamples);
+        final SynchronizedUnivariateSolver syncSolver = new SynchronizedUnivariateSolver(objFunc,
+                params.getGammaSolverType().getSolverFactory(), numSamples);
         IntStream.range(0, numSamples)
                 .forEach(si -> {
-                    final double x0 = FastMath.max(gammaLowerBound + CoverageModelEMParams.GAMMA_BRENT_MIN_STARTING_POINT,
-                            FastMath.min(sampleUnexplainedVariance.getDouble(si), 0.5 * (CoverageModelEMParams.GAMMA_BRENT_UPPER_LIMIT - gammaLowerBound)));
-                    syncSolver.add(si, gammaLowerBound, CoverageModelEMParams.GAMMA_BRENT_UPPER_LIMIT, x0,
+                    final double x0 = FastMath.max(gammaLowerBound + CoverageModelEMParams.GAMMA_MIN_STARTING_POINT,
+                            FastMath.min(sampleUnexplainedVariance.getDouble(si), 0.5 * (CoverageModelEMParams.GAMMA_UPPER_LIMIT - gammaLowerBound)));
+                    syncSolver.add(si, gammaLowerBound, CoverageModelEMParams.GAMMA_UPPER_LIMIT, x0,
                             params.getGammaAbsoluteTolerance(), params.getGammaRelativeTolerance(),
                             params.getGammaMaximumIterations());
                 });
         final INDArray newSampleUnexplainedVariance = Nd4j.create(numSamples, 1);
         final List<Integer> numberOfEvaluations = new ArrayList<>(numSamples);
         try {
-            final Map<Integer, SynchronizedBrentSolver.BrentSolverSummary> newGammaMap = syncSolver.solve();
+            final Map<Integer, SynchronizedUnivariateSolver.UnivariateSolverSummary> newGammaMap = syncSolver.solve();
             newGammaMap.entrySet().stream()
                     .forEach(entry -> {
                         final int sampleIndex = entry.getKey();
-                        final SynchronizedBrentSolver.BrentSolverSummary summary = entry.getValue();
-                        double val = gammaLowerBound;
-                        if (summary.status.equals(SynchronizedBrentSolver.BrentSolverStatus.SUCCESS)) {
-                            val = summary.x;
-                        }
+                        final SynchronizedUnivariateSolver.UnivariateSolverSummary summary = entry.getValue();
+                        double val = summary.status.equals(SynchronizedUnivariateSolver.UnivariateSolverStatus.SUCCESS) ?
+                                summary.x : gammaLowerBound;
                         newSampleUnexplainedVariance.put(sampleIndex, 0, val);
                         numberOfEvaluations.add(summary.evaluations);
                     });
@@ -661,8 +668,6 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                 .put("iterations", Collections.max(numberOfEvaluations))
                 .build();
     }
-
-
 
     @EvaluatesRDD @UpdatesRDD @CachesRDD
     public SubroutineSignal updateCopyRatioLatentPosteriorExpectations() {
@@ -1028,15 +1033,18 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         final int maxIters = params.getPsiMaxIterations();
         final double absTol = params.getPsiAbsoluteTolerance();
         final double relTol = params.getPsiRelativeTolerance();
-        logger.debug("Psi solver type: " + params.getPsiSolverType().name());
-        switch (params.getPsiSolverType()) {
-            case PSI_TARGET_RESOLVED_VIA_BRENT: /* done on the compute blocks */
+        final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
+                new UnivariateSolverDescription(absTol, relTol, DEFAULT_FUNCTION_EVALUATION_ACCURACY));
+
+        logger.debug("Psi solver type: " + params.getPsiSolverMode().name());
+        switch (params.getPsiSolverMode()) {
+            case PSI_TARGET_RESOLVED: /* done on the compute blocks */
                 mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_PSI")
-                        .updateTargetUnexplainedVarianceTargetResolvedBrent(maxIters, absTol, relTol));
+                        .updateTargetUnexplainedVarianceTargetResolved(maxIters, solver));
                 break;
 
-            case PSI_ISOTROPIC_VIA_BRENT: /* done on the driver node */
-                return updateTargetUnexplainedVarianceIsotropicBrent();
+            case PSI_ISOTROPIC: /* done on the driver node */
+                return updateTargetUnexplainedVarianceIsotropic();
 
             default:
                 throw new RuntimeException("Illegal Psi solver type.");
@@ -1061,32 +1069,34 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
     }
 
     /**
-     * M-step for isotropic unexplained variance using Brent method
+     * M-step for isotropic unexplained variance
      * @return a {@link SubroutineSignal} object containing information about the solution
      */
     @UpdatesRDD @CachesRDD
-    private SubroutineSignal updateTargetUnexplainedVarianceIsotropicBrent() {
+    private SubroutineSignal updateTargetUnexplainedVarianceIsotropic() {
         mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_PSI"));
         cacheWorkers("after M-step for isotropic unexplained variance initialization");
 
         final double oldIsotropicPsi = fetchFromWorkers("Psi_t", 1).meanNumber().doubleValue();
 
-        /* re require \Psi_t + \gamma_s > 0 */
-        final double psiLowerBound = - Nd4j.min(sampleUnexplainedVariance).getDouble(0);
+        final double psiLowerBound = 0.0;
         final UnivariateFunction objFunc = psi -> mapWorkersAndReduce(cb -> cb.calculateTargetSummedPsiGradient(psi), (a, b) -> a + b);
 
-        final BrentSolver solver = new BrentSolver(params.getPsiRelativeTolerance(), params.getPsiAbsoluteTolerance());
+        final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
+                new UnivariateSolverDescription(params.getPsiAbsoluteTolerance(),
+                        params.getPsiRelativeTolerance(), DEFAULT_FUNCTION_EVALUATION_ACCURACY));
         double newIsotropicPsi;
         try {
             newIsotropicPsi = solver.solve(params.getPsiMaxIterations(), objFunc,
-                    psiLowerBound, CoverageModelEMParams.PSI_BRENT_UPPER_LIMIT,
-                    FastMath.max(psiLowerBound + CoverageModelEMParams.PSI_BRENT_MIN_STARTING_POINT,
-                            FastMath.min(oldIsotropicPsi, 0.5 * CoverageModelEMParams.PSI_BRENT_UPPER_LIMIT)));
+                    psiLowerBound, CoverageModelEMParams.PSI_UPPER_LIMIT,
+                    FastMath.max(psiLowerBound + CoverageModelEMParams.PSI_MIN_STARTING_POINT,
+                            FastMath.min(oldIsotropicPsi, 0.5 * CoverageModelEMParams.PSI_UPPER_LIMIT)));
         } catch (NoBracketingException e) {
-            logger.warn("Root of M-step for Psi stationarity equation could be bracketed.");
-            newIsotropicPsi = psiLowerBound;
+            logger.warn("Root of M-step optimality equation for Psi could be bracketed.");
+            newIsotropicPsi = oldIsotropicPsi;
         } catch (TooManyEvaluationsException e) {
-            throw new RuntimeException("Increase the number of Brent iterations for M-step of Psi.");
+            logger.warn("Increase the number of Brent iterations for M-step of Psi.");
+            newIsotropicPsi = oldIsotropicPsi;
         }
 
         /* update the compute block(s) */
@@ -1196,6 +1206,9 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                 joinWithWorkersAndMap(chopINDArrayToBlocks(W_tl_new),
                         p -> p._1.cloneWithUpdatedPrimitive("W_tl", p._2));
                 break;
+
+            default:
+                throw new GATKException.ShouldNeverReachHereException("W update policy unkown");
         }
 
         /* update F[W] */
@@ -1542,7 +1555,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
     public void cacheWorkers(final String where) {
         if (sparkContextIsAvailable) {
             logger.debug("RDD caching requested (" + where + ")");
-            computeRDD.persist(StorageLevel.MEMORY_ONLY_SER());
+            computeRDD.persist(StorageLevel.MEMORY_AND_DISK_SER());
             cacheCallCounter++;
             if (!prevCachedComputeRDDDeque.isEmpty()) {
                 prevCachedComputeRDDDeque.removeFirst().unpersist(true);

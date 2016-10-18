@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.coveragemodel;
 
+import org.broadinstitute.hellbender.tools.coveragemodel.math.UnivariateSolverType;
 import org.broadinstitute.hellbender.utils.param.ParamUtils;
 import org.nd4j.linalg.api.buffer.DataBuffer;
 
@@ -12,9 +13,9 @@ import javax.annotation.Nonnull;
  */
 public class CoverageModelEMParams {
 
-    public enum PsiSolverType {
-        PSI_TARGET_RESOLVED_VIA_BRENT,
-        PSI_ISOTROPIC_VIA_BRENT
+    public enum PsiSolverMode {
+        PSI_TARGET_RESOLVED,
+        PSI_ISOTROPIC
     }
 
     public enum WSolverType {
@@ -32,16 +33,16 @@ public class CoverageModelEMParams {
         RDD_JOIN
     }
 
-    public static final double PSI_BRENT_UPPER_LIMIT = 1.0;
-    public static final double PSI_BRENT_MIN_STARTING_POINT = 1e-8;
+    public static final double PSI_UPPER_LIMIT = 0.1;
+    public static final double PSI_MIN_STARTING_POINT = 1e-8;
 
-    public static final double GAMMA_BRENT_UPPER_LIMIT = 1.0;
-    public static final double GAMMA_BRENT_MIN_STARTING_POINT = 1e-8;
+    public static final double GAMMA_UPPER_LIMIT = 1.0;
+    public static final double GAMMA_MIN_STARTING_POINT = 1e-8;
 
     private DataBuffer.Type dType = DataBuffer.Type.DOUBLE;
 
     /* maximum number of EM iterations */
-    private int maxIterations = 10;
+    private int maxIterations = 30;
 
     /* dimension of the latent space */
     private int numLatents = 10;
@@ -80,7 +81,7 @@ public class CoverageModelEMParams {
     private double fourierRegularizationStrength = 10_000;
 
     /* Psi solver type */
-    private PsiSolverType psiSolverType = PsiSolverType.PSI_TARGET_RESOLVED_VIA_BRENT;
+    private PsiSolverMode psiSolverMode = PsiSolverMode.PSI_ISOTROPIC;
 
     /* W solver type */
     private WSolverType wSolverType = WSolverType.W_SOLVER_SPARK;
@@ -88,32 +89,37 @@ public class CoverageModelEMParams {
     /* calculate copy ratio posteriors local or with spark */
     private CopyRatioHMMType copyRatioHMMType = CopyRatioHMMType.COPY_RATIO_HMM_SPARK;
 
-    /* M-step error tolerance in maximizing w.r.t. Psi */
-    private double psiAbsTol = 1e-7;
-    private double psiRelTol = 1e-4;
-
     /* M-step maximum iterations in maximizing w.r.t. Psi */
-    private int psiMaxIterations = 50;
-
-    /* M-step error tolerance in maximizing w.r.t. W (if Fourier regularization is enabled) */
-    private double wAbsTol = 1e-7;
-    private double wRelTol = 1e-3;
+    private int psiMaxIterations = 200;
 
     /* M-step maximum iterations in maximizing w.r.t. W (if Fourier regularization is enabled) */
-    private int wMaxIterations = 20;
-
-    /* E-step error tolerance in solving for \gamma_s */
-    private double gammaAbsTol = 1e-7;
-    private double gammaRelTol = 1e-4;
+    private int wMaxIterations = 200;
 
     /* E-step maximum iterations in solving \gamma_s */
-    private int gammaMaxIterations = 50;
+    private int gammaMaxIterations = 200;
+
+    /* M-step error tolerance in maximizing w.r.t. W (if Fourier regularization is enabled) */
+    private double wAbsTol = 1e-8;
+    private double wRelTol = 1e-6;
+
+    /* M-step error tolerance in maximizing w.r.t. Psi */
+    private double psiAbsTol = 1e-8;
+    private double psiRelTol = 1e-6;
+
+    /* E-step error tolerance in solving for \gamma_s */
+    private double gammaAbsTol = 1e-8;
+    private double gammaRelTol = 1e-6;
+
 
     private boolean checkpointingEnabled = true;
 
     private int checkpointingInterval = 10;
 
     private CommunicationPolicy principalMapCommunicationPolicy = CommunicationPolicy.RDD_JOIN;
+
+    private UnivariateSolverType psiSolverType = UnivariateSolverType.BRENT;
+
+    private UnivariateSolverType gammaSolverType = UnivariateSolverType.BRENT;
 
     private double meanFieldAdmixingRatio = 0.75;
 
@@ -240,12 +246,12 @@ public class CoverageModelEMParams {
 
     public double getParameterEstimationAbsoluteTolerance() { return this.paramAbsTol; }
 
-    public PsiSolverType getPsiSolverType() {
-        return psiSolverType;
+    public PsiSolverMode getPsiSolverMode() {
+        return psiSolverMode;
     }
 
-    public CoverageModelEMParams setPsiPsiolverType(@Nonnull final PsiSolverType psiSolverType) {
-        this.psiSolverType = psiSolverType;
+    public CoverageModelEMParams setPsiPsiolverType(@Nonnull final PsiSolverMode psiSolverMode) {
+        this.psiSolverMode = psiSolverMode;
         return this;
     }
 
@@ -406,4 +412,11 @@ public class CoverageModelEMParams {
         return this;
     }
 
+    public UnivariateSolverType getPsiSolverType() {
+        return psiSolverType;
+    }
+
+    public UnivariateSolverType getGammaSolverType() {
+        return gammaSolverType;
+    }
 }

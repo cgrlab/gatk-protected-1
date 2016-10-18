@@ -245,7 +245,7 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
 
     /* Use custom Nd4j Kryo serializer */
     private static final Map<String, String> nd4jSparkProperties = ImmutableMap.<String,String>builder()
-            .put("spark.kryo.registrator", "org.broadinstitute.hellbender.tools.coveragemodel.nd4jutils.Nd4jRegistrator")
+            .put("spark.kryo.registrator", "org.nd4j.Nd4jRegistrator")
             .build();
 
 

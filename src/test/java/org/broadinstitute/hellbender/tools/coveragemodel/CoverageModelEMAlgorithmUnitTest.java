@@ -50,7 +50,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
     private static CoverageModelGermlineCopyNumberPosteriorCalculator copyNumberPosteriorCalculator;
 
     private static final Map<String, String> nd4jSparkProperties = ImmutableMap.<String,String>builder()
-            .put("spark.kryo.registrator", "org.broadinstitute.hellbender.tools.coveragemodel.nd4jutils.Nd4jRegistrator")
+            .put("spark.kryo.registrator", "org.nd4j.Nd4jRegistrator")
             .build();
 
 //    static {
@@ -87,35 +87,35 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
         copyNumberPosteriorCalculator.initializeCaches(testReadCounts.targets());
     }
 
-//    @Test(dataProvider = "ploidyAnnotsDataProvider")
-//    public void localTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
-//        params = new CoverageModelEMParams();
-//                //.enableFourierRegularization()
-//                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
-//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
-//        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
-//                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
-//                1, null);
-//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
-//        algo.runExpectationMaximization(true, "/Users/mehrtash/Data/Genome/PPCA/out/blah");
-//        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah");
-//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
-//    }
-
     @Test(dataProvider = "ploidyAnnotsDataProvider")
-    public void somaticTestLocal(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
+    public void localTest(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
         params = new CoverageModelEMParams();
-        final CoverageModelParametersNDArray model =
-                CoverageModelParametersNDArray.read("/Users/mehrtash/Data/Genome/PPCA/out/blah");
-        model.arePrincipalComponenetsOrthogonal(1e-4, true, logger);
+                //.enableFourierRegularization()
+                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
         params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
         ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
-                sexGenotypeData, copyNumberPosteriorCalculator, params, model,
+                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
                 1, null);
         algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
-        algo.runExpectation(true);
-        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah2", null);
+        algo.runExpectationMaximization(true, "/Users/mehrtash/Data/Genome/PPCA/out/blah");
+        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah");
+        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
     }
+
+//    @Test(dataProvider = "ploidyAnnotsDataProvider")
+//    public void somaticTestLocal(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
+//        params = new CoverageModelEMParams();
+//        final CoverageModelParametersNDArray model =
+//                CoverageModelParametersNDArray.read("/Users/mehrtash/Data/Genome/PPCA/out/blah");
+//        model.arePrincipalComponenetsOrthogonal(1e-4, true, logger);
+//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
+//        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
+//                sexGenotypeData, copyNumberPosteriorCalculator, params, model,
+//                1, null);
+//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
+//        algo.runExpectation(true);
+//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah2", null);
+//    }
 
 //
 //    @Test(dataProvider = "ploidyAnnotsDataProvider")

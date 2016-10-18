@@ -8,6 +8,7 @@ import org.broadinstitute.hellbender.utils.Utils;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.function.Function;
@@ -20,15 +21,17 @@ import java.util.function.Supplier;
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
 
-public abstract class CoverageModelEMAlgorithm {
+public abstract class CoverageModelEMAlgorithm<S> {
 
     protected final Logger logger = LogManager.getLogger(CoverageModelEMAlgorithm.class);
 
     protected final CoverageModelEMParams params;
 
-    protected EMAlgorithmStatus status;
+    protected final String outputAbsolutePath;
 
-    public static final boolean ADAPTIVE_PSI_SOLVER_MODE_SWITCHING = true;
+    protected final S neutralState;
+
+    protected EMAlgorithmStatus status;
 
     public enum EMAlgorithmStatus {
         TBD(false, "Status is not determined yet."),
@@ -63,9 +66,13 @@ public abstract class CoverageModelEMAlgorithm {
 
     public EMAlgorithmStatus getStatus() { return status; }
 
-    public CoverageModelEMAlgorithm(@Nonnull final CoverageModelEMParams params) {
+    public CoverageModelEMAlgorithm(@Nonnull final CoverageModelEMParams params,
+                                    @Nullable final String outputAbsolutePath,
+                                    @Nonnull final S neutralState) {
         this.params = Utils.nonNull(params, "Target coverage EM algorithm parameters can not be null.");
         this.status = EMAlgorithmStatus.TBD;
+        this.neutralState = Utils.nonNull(neutralState, "The neutral state must be non-null");
+        this.outputAbsolutePath = outputAbsolutePath;
         logger.info("EM algorithm initialized.");
     }
 
@@ -92,12 +99,11 @@ public abstract class CoverageModelEMAlgorithm {
         showIterationInfo(iterInfo.iter, name, iterInfo.logLikelihood, iterInfo.errorNorm, misc);
     }
 
-    public void runExpectationMaximization(final boolean performCopyRatioPosteriorCalling,
-                                           @Nullable final String modelOutputAbsolutePath) {
-        if (ADAPTIVE_PSI_SOLVER_MODE_SWITCHING) {
+    public void runExpectationMaximization() {
+        if (params.adaptivePsiSolverModeSwitchingEnabled()) {
             /* if copy ratio posterior calling is enabled, the first few iterations need to be robust */
-            if (!this.params.getPsiSolverMode().equals(CoverageModelEMParams.PsiSolverMode.PSI_ISOTROPIC) &&
-                    performCopyRatioPosteriorCalling) {
+            if (params.adaptivePsiSolverModeSwitchingEnabled() &&
+                    !this.params.getPsiSolverMode().equals(CoverageModelEMParams.PsiSolverMode.PSI_ISOTROPIC)) {
                 this.params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverMode.PSI_ISOTROPIC);
                 logger.info("Overriding the requested unexplained variance solver to " +
                         CoverageModelEMParams.PsiSolverMode.PSI_ISOTROPIC.name());
@@ -112,11 +118,10 @@ public abstract class CoverageModelEMAlgorithm {
         double latestMStepLikelihood = Double.NEGATIVE_INFINITY;
         final IterationInfo iterInfo = new IterationInfo(Double.NEGATIVE_INFINITY, 0, 0);
         boolean updateCopyRatioPosteriors = false;
-        boolean updateGammaPosteriors = false;
         boolean paramEstimationConverged = false;
         boolean performMStep = true;
 
-        while (iterInfo.iter < params.getMaxIterations()) {
+        while (iterInfo.iter < params.getMaxEMIterations()) {
 
             /* cycle through E-step mean-field equations until they are satisfied to the desired degree */
             double maxPosteriorErrorNorm = 0;
@@ -132,7 +137,7 @@ public abstract class CoverageModelEMAlgorithm {
                 runRoutine(this::updateBiasLatentPosteriorExpectations, s -> "N/A", "E_STEP_Z", iterInfo);
                 posteriorErrorNormBias = iterInfo.errorNorm;
 
-                if (updateGammaPosteriors) {
+                if (params.gammaUpdateEnabled()) {
                     runRoutine(this::updateSampleUnexplainedVariance,
                             s -> "iters: " + s.getInteger("iterations"), "E_STEP_GAMMA", iterInfo);
                     posteriorErrorNormSampleUnexplainedVariance = iterInfo.errorNorm;
@@ -155,14 +160,14 @@ public abstract class CoverageModelEMAlgorithm {
                         posteriorErrorNormCopyRatio));
 
                 /* check convergence of the E-step */
-                if (maxPosteriorErrorNorm < params.getPosteriorErrorNormTol()) {
+                if (maxPosteriorErrorNorm < params.getPosteriorAbsTol()) {
                     break;
                 }
 
                 iterEStep++;
             }
 
-            if (maxPosteriorErrorNorm > params.getPosteriorErrorNormTol()) {
+            if (maxPosteriorErrorNorm > params.getPosteriorAbsTol()) {
                 logger.info("E-step cycles did not fully converge. Increase the maximum number of E-step cycles." +
                         " Continuing...");
             }
@@ -214,15 +219,14 @@ public abstract class CoverageModelEMAlgorithm {
                 latestMStepLikelihood = iterInfo.logLikelihood;
 
                 /* if the likelihood has increased and the increment is small, start updating copy number posteriors */
-                if (performCopyRatioPosteriorCalling &&
+                if (params.copyRatioUpdateEnabled() &&
                         !updateCopyRatioPosteriors &&
                         (latestMStepLikelihood - prevMStepLikelihood) > 0 &&
-                        (latestMStepLikelihood - prevMStepLikelihood) < params.getLogLikelihoodTolThresholdCopyRatioCalling()) {
+                        (latestMStepLikelihood - prevMStepLikelihood) < params.getLogLikelihoodTolThresholdCRCalling()) {
                     updateCopyRatioPosteriors = true;
-                    updateGammaPosteriors = true;
                     logger.info("Partial convergence achieved; will start updating copy ratio posteriors and gamma after the current" +
                             " iteration");
-                    if (ADAPTIVE_PSI_SOLVER_MODE_SWITCHING) {
+                    if (params.adaptivePsiSolverModeSwitchingEnabled()) {
                         params.setPsiPsiolverType(CoverageModelEMParams.PsiSolverMode.PSI_TARGET_RESOLVED);
                     }
                 }
@@ -231,22 +235,28 @@ public abstract class CoverageModelEMAlgorithm {
             /* check convergence in log likelihood change */
             if (FastMath.abs(latestMStepLikelihood - prevMStepLikelihood) < params.getLogLikelihoodTolerance()) {
                 /* make sure that we have either already called copy ratio posteriors, or we are not required to */
-                if (!performCopyRatioPosteriorCalling || updateCopyRatioPosteriors) {
+                if (!params.copyRatioUpdateEnabled() || updateCopyRatioPosteriors) {
                     status = EMAlgorithmStatus.SUCCESS_LIKELIHOOD_TOL;
                     break;
                 }
-            } else if (iterInfo.iter == params.getMaxIterations() - 2) {
+            } else if (iterInfo.iter == params.getMaxEMIterations() - 2) {
                 performMStep = false; /* so that we end with an E-step */
             }
 
             iterInfo.increaseIterationCount();
 
-            if (modelOutputAbsolutePath != null && iterInfo.iter % params.getModelSavingInterval() == 0) {
+            if (params.isModelCheckpointingEnabled() && iterInfo.iter % params.getModelCheckpointingInterval() == 0) {
+                final String modelOutputAbsolutePath = new File(outputAbsolutePath,
+                        String.format("model_checkpoint_iter_%d", iterInfo.iter)).getAbsolutePath();
+                final String posteriorOutputAbsolutePath = new File(outputAbsolutePath,
+                        String.format("posteriors_checkpoint_iter_%d", iterInfo.iter)).getAbsolutePath();
+                /* the following will automatically create the directory if it doesn't exist */
                 saveModel(modelOutputAbsolutePath);
+                savePosteriors(posteriorOutputAbsolutePath, PosteriorVerbosityLevel.BASIC);
             }
         }
 
-        if (iterInfo.iter == params.getMaxIterations()) {
+        if (iterInfo.iter == params.getMaxEMIterations()) {
             status = EMAlgorithmStatus.FAILURE_MAX_ITERS_REACHED;
         }
 
@@ -256,7 +266,7 @@ public abstract class CoverageModelEMAlgorithm {
     /**
      *
      */
-    public void runExpectation(final boolean performCopyRatioPosteriorCalling) {
+    public void runExpectation() {
 
         showIterationHeader();
 
@@ -265,7 +275,7 @@ public abstract class CoverageModelEMAlgorithm {
         final IterationInfo iterInfo = new IterationInfo(Double.NEGATIVE_INFINITY, 0, 0);
         boolean updateCopyRatioPosteriors = false;
 
-        while (iterInfo.iter < params.getMaxIterations()) {
+        while (iterInfo.iter < params.getMaxEMIterations()) {
 
             /* cycle through E-step mean-field equations until they are satisfied to the desired degree */
             double maxPosteriorErrorNorm;
@@ -300,25 +310,32 @@ public abstract class CoverageModelEMAlgorithm {
             latestEStepLikelihood = iterInfo.logLikelihood;
 
             /* check convergence of the E-step */
-            if (maxPosteriorErrorNorm < params.getPosteriorErrorNormTol() &&
+            if (maxPosteriorErrorNorm < params.getPosteriorAbsTol() &&
                     FastMath.abs(latestEStepLikelihood - prevEStepLikelihood) < params.getLogLikelihoodTolerance()) {
                 status = EMAlgorithmStatus.SUCCESS_POSTERIOR_CONVERGENCE;
                 break;
             }
 
             /* if the likelihood has increased and the increment is small, start updating copy number posteriors */
-            if (performCopyRatioPosteriorCalling &&
+            if (params.copyRatioUpdateEnabled() &&
                     !updateCopyRatioPosteriors &&
                     (latestEStepLikelihood - prevEStepLikelihood) > 0 &&
-                    (latestEStepLikelihood - prevEStepLikelihood) < params.getLogLikelihoodTolThresholdCopyRatioCalling()) {
+                    (latestEStepLikelihood - prevEStepLikelihood) < params.getLogLikelihoodTolThresholdCRCalling()) {
                 updateCopyRatioPosteriors = true;
                 logger.info("Partial convergence achieved; will start calling copy ratio posteriors");
             }
 
             iterInfo.increaseIterationCount();
+
+            if (params.isModelCheckpointingEnabled() && iterInfo.iter % params.getModelCheckpointingInterval() == 0) {
+                final String posteriorOutputAbsolutePath = new File(outputAbsolutePath,
+                        String.format("posterior_checkpoint_iter_%d", iterInfo.iter)).getAbsolutePath();
+                /* the following will automatically create the directory if it doesn't exist */
+                savePosteriors(posteriorOutputAbsolutePath, PosteriorVerbosityLevel.BASIC);
+            }
         }
 
-        if (iterInfo.iter == params.getMaxIterations()) {
+        if (iterInfo.iter == params.getMaxEMIterations()) {
             status = EMAlgorithmStatus.FAILURE_MAX_ITERS_REACHED;
         }
 
@@ -377,4 +394,6 @@ public abstract class CoverageModelEMAlgorithm {
     public abstract double[] getLogLikelihoodPerSample();
 
     public abstract void saveModel(final String modelOutputPath);
+
+    public abstract void savePosteriors(final String posteriorOutputPath, final PosteriorVerbosityLevel verbosity);
 }

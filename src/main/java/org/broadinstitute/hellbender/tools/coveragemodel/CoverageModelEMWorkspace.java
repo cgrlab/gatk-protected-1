@@ -45,6 +45,17 @@ import java.util.stream.IntStream;
 
 public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataProvider & CallStringProvider & ScalarProvider> {
 
+    public static final String COPY_RATIO_MLE_FILENAME = "copy_ratio_MLE.tsv";
+    public static final String COPY_RATIO_PRECISION_FILENAME = "copy_ratio_precision.tsv";
+    public static final String SAMPLE_READ_DEPTH_POSTERIOS_FILENAME = "sample_read_depth_posteriors.tsv";
+    public static final String SAMPLE_LOG_LIKELIHOODS_FILENAME = "sample_log_likelihoods.tsv";
+    public static final String SAMPLE_UNEXPLAINED_VARIANCE_FILENAME = "sample_unexplained_variance.tsv";
+    public static final String TOTAL_UNEXPLAINED_VARIANCE_FILENAME = "copy_ratio_Psi.tsv";
+    public static final String TOTAL_REMOVED_BIAS_FILENAME = "copy_ratio_Wz.tsv";
+    public static final String COPY_RATIO_SEGMENTS_FILENAME = "copy_ratio_segments.seg";
+    public static final String COPY_RATIO_GENOTYPES_FILENAME = "copy_ratio_genotypes.vcf";
+
+
     protected final Logger logger = LogManager.getLogger(CoverageModelEMWorkspace.class);
 
     protected final CoverageModelEMParams params;
@@ -217,16 +228,11 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
 
     public abstract void saveModel(final String outputPath);
 
-    public void savePosteriors(final S referenceState, final String outputPath, @Nullable final String commandLine) {
-        /* create output directory if it doesn't exist */
-        createOutputPath(outputPath);
-
-        final List<String> sampleNames = processedReadCounts.columnNames();
-
-        /* write copy ratio MLE results to file */
+    /* write copy ratio MLE results to file */
+    private void saveCopyRatioMLE(final String outputPath) {
         final ImmutablePair<M, M> copyRatioMLEData = fetchCopyRatioMaxLikelihoodResults();
 
-        final File copyRatioMLEFile = new File(outputPath, "copy_ratio_MLE.tsv");
+        final File copyRatioMLEFile = new File(outputPath, COPY_RATIO_MLE_FILENAME);
         try (final TableWriter<TargetDoubleRecord> copyRatioRecordTableWriter = getTargetDoubleRecordTableWriter(new FileWriter(copyRatioMLEFile),
                 processedReadCounts.columnNames())) {
             for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
@@ -237,8 +243,9 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
             throw new UserException.CouldNotCreateOutputFile(copyRatioMLEFile, "Could not save copy ratio MLE results");
         }
 
-        final File copyRatioPrecisionFile = new File(outputPath, "copy_ratio_precision.tsv");
-        try (final TableWriter<TargetDoubleRecord> copyRatioPrecisionRecordTableWriter = getTargetDoubleRecordTableWriter(new FileWriter(copyRatioPrecisionFile),
+        final File copyRatioPrecisionFile = new File(outputPath, COPY_RATIO_PRECISION_FILENAME);
+        try (final TableWriter<TargetDoubleRecord> copyRatioPrecisionRecordTableWriter = getTargetDoubleRecordTableWriter(
+                new FileWriter(copyRatioPrecisionFile),
                 processedReadCounts.columnNames())) {
             for (int targetIndex = 0; targetIndex < numTargets; targetIndex++) {
                 copyRatioPrecisionRecordTableWriter.writeRecord(new TargetDoubleRecord(processedTargetList.get(targetIndex),
@@ -247,9 +254,12 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(copyRatioPrecisionFile, "Could not save copy ratio precision results");
         }
+    }
 
-        /* write read depth posteriors to file */
-        final File sampleReadDepthPosteriorsFile = new File(outputPath, "sample_read_depth_posteriors.tsv");
+    /* write read depth posteriors to file */
+    private void saveReadDepthPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final File sampleReadDepthPosteriorsFile = new File(outputPath, SAMPLE_READ_DEPTH_POSTERIOS_FILENAME);
         final double[] sampleMeanLogReadDepthsArray = vectorToArray(fetchSampleMeanLogReadDepths());
         final double[] sampleVarLogReadDepthsArray = vectorToArray(fetchSampleVarLogReadDepths());
         try (final TableWriter<SampleReadDepthPosteriorRecord> sampleReadDepthPosteriorsTableWriter =
@@ -261,9 +271,12 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(sampleReadDepthPosteriorsFile, "Could not save sample read depth posterior results");
         }
+    }
 
-        /* write log likelihood per sample to file */
-        final File sampleLogLikelihoodsFile = new File(outputPath, "sample_log_likelihoods.tsv");
+    /* write log likelihood per sample to file */
+    private void saveLogLikelihoodPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final File sampleLogLikelihoodsFile = new File(outputPath, SAMPLE_LOG_LIKELIHOODS_FILENAME);
         final double[] sampleLogLikelihoods = getLogLikelihoodPerSample();
         try (final TableWriter<SampleDoubleRecord> sampleLogLikelihoodRecordTableWriter =
                      getSampleDoubleRecordTableWriter(new FileWriter(sampleLogLikelihoodsFile), "LOG_LIKELIHOOD")) {
@@ -274,9 +287,12 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(sampleLogLikelihoodsFile, "Could not save sample log likelihood results");
         }
+    }
 
-        /* write sample-specific unexplained variance to file */
-        final File sampleUnexplainedVarianceFile = new File(outputPath, "sample_unexplained_variance.tsv");
+    /* write sample-specific unexplained variance to file */
+    private void saveGammaPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final File sampleUnexplainedVarianceFile = new File(outputPath, SAMPLE_UNEXPLAINED_VARIANCE_FILENAME);
         final double[] sampleUnexplainedVariance = fetchSampleUnexplainedVariance();
         try (final TableWriter<SampleDoubleRecord> sampleUnexplainedVarianceTableWriter =
                      getSampleDoubleRecordTableWriter(new FileWriter(sampleUnexplainedVarianceFile), "SAMPLE_UNEXPLAINED_VARIANCE")) {
@@ -287,8 +303,11 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(sampleUnexplainedVarianceFile, "Could not save sample unexplained variance results");
         }
+    }
 
-        /* segmentation, vcf creation */
+    /* segmentation, vcf creation */
+    private void saveCopyRatioPosteriors(final String outputPath, final S referenceState, final String commandLine) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
         final List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> copyRatioHMMResult =
                 getCopyRatioHiddenMarkovModelResults();
         final HiddenMarkovModelPostProcessor<CoverageModelCopyRatioEmissionData, S, Target> copyRatioProcessor =
@@ -306,8 +325,8 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
                                 .collect(Collectors.toList()),
                         referenceState);
 
-        final File segmentsFile = new File(outputPath, "copy_ratio_segments.seg");
-        final File vcfFile = new File(outputPath, "copy_ratio_genotypes.vcf");
+        final File segmentsFile = new File(outputPath, COPY_RATIO_SEGMENTS_FILENAME);
+        final File vcfFile = new File(outputPath, COPY_RATIO_GENOTYPES_FILENAME);
         try (final HiddenStateSegmentRecordWriter<S, Target> segWriter = new HiddenStateSegmentRecordWriter<>(segmentsFile);
              final VariantContextWriter VCFWriter  = GATKVariantContextUtils.createVCFWriter(vcfFile, null, false)) {
             copyRatioProcessor.writeSegmentsToTableWriter(segWriter);
@@ -331,9 +350,11 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(copyRatioViterbiFile, "Could not save copy ratio Viterbi results");
         }
+    }
 
+    private void saveExtendedPosteriors(final String outputPath) {
         /* save total explained variance as a matrix */
-        final File totalExplainedVarianceFile = new File(outputPath, "copy_ratio_Psi.tsv");
+        final File totalExplainedVarianceFile = new File(outputPath, TOTAL_UNEXPLAINED_VARIANCE_FILENAME);
         final M totalExplainedVarianceMatrix = fetchTotalUnexplainedVariance();
         try (final TableWriter<TargetDoubleRecord> totalExplainedVarianceTableWriter = getTargetDoubleRecordTableWriter(
                 new FileWriter(totalExplainedVarianceFile), processedReadCounts.columnNames())) {
@@ -346,7 +367,7 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
         }
 
         /* save total noise as a matrix */
-        final File totalNoiseFile = new File(outputPath, "copy_ratio_Wz.tsv");
+        final File totalNoiseFile = new File(outputPath, TOTAL_REMOVED_BIAS_FILENAME);
         final M totalNoiseMatrix = fetchTotalNoise();
         try (final TableWriter<TargetDoubleRecord> totalNoiseTableWriter = getTargetDoubleRecordTableWriter(
                 new FileWriter(totalNoiseFile), processedReadCounts.columnNames())) {
@@ -356,6 +377,24 @@ public abstract class CoverageModelEMWorkspace<V, M, S extends AlleleMetadataPro
             }
         } catch (final IOException ex) {
             throw new UserException.CouldNotCreateOutputFile(totalNoiseFile, "Could not save total noise results");
+        }
+    }
+
+    public void savePosteriors(final S referenceState, final String outputPath, final PosteriorVerbosityLevel verbosityLevel,
+                               @Nullable final String commandLine) {
+        /* create output directory if it doesn't exist */
+        createOutputPath(outputPath);
+
+        saveReadDepthPosteriors(outputPath);
+        saveLogLikelihoodPosteriors(outputPath);
+        saveGammaPosteriors(outputPath);
+
+        if (verbosityLevel.equals(PosteriorVerbosityLevel.FULL)) {
+            saveCopyRatioPosteriors(outputPath, referenceState, commandLine);
+            if (params.extendedPosteriorOutputEnabled()) {
+                saveCopyRatioMLE(outputPath);
+                saveExtendedPosteriors(outputPath);
+            }
         }
     }
 

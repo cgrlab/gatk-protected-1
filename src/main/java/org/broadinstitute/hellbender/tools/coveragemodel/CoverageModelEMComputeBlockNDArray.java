@@ -458,6 +458,8 @@ public class CoverageModelEMComputeBlockNDArray {
      * @return
      */
     public CoverageModelEMComputeBlockNDArray updateTargetUnexplainedVarianceTargetResolved(final int maxIters,
+                                                                                            final double psiUpperLimit,
+                                                                                            final double psiMinStartingPoint,
                                                                                             final AbstractUnivariateSolver solver) {
         /* fetch the required caches */
         final INDArray Psi_t = getINDArrayFromCache("Psi_t");
@@ -477,8 +479,8 @@ public class CoverageModelEMComputeBlockNDArray {
                     final UnivariateFunction objFunc = createPsiSolverObjectiveFunction(ti, M_st, Sigma_st, gamma_s, B_st);
                     double newPsi;
                     try {
-                        newPsi = solver.solve(maxIters, objFunc, psiLowerBound, CoverageModelEMParams.PSI_UPPER_LIMIT,
-                                FastMath.max(psiLowerBound + CoverageModelEMParams.PSI_MIN_STARTING_POINT, Psi_t.getDouble(ti)));
+                        newPsi = solver.solve(maxIters, objFunc, psiLowerBound, psiUpperLimit,
+                                FastMath.max(psiLowerBound + psiMinStartingPoint, Psi_t.getDouble(ti)));
                         if (calculatePsiCurvature(ti, newPsi, M_st, Sigma_st, gamma_s, B_st) > 0) {
                             /* we have landed on a local maximum -- reject */
                             newPsi = Psi_t.getDouble(ti);
@@ -490,6 +492,8 @@ public class CoverageModelEMComputeBlockNDArray {
                     return new ImmutablePair<>(newPsi, solver.getEvaluations());
                 })
                 .collect(Collectors.toList());
+
+        System.out.println(res.stream().map(p -> Integer.toString(p.right)).collect(Collectors.joining(", ")));
 
         final INDArray newPsi_t = Nd4j.create(res.stream().mapToDouble(p -> p.left).toArray(), Psi_t.shape());
         final int maxIterations = Collections.max(res.stream().mapToInt(p -> p.right).boxed().collect(Collectors.toList()));

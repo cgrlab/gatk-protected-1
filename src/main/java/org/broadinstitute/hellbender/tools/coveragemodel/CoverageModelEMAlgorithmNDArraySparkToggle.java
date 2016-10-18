@@ -8,19 +8,22 @@ import org.broadinstitute.hellbender.utils.hmm.interfaces.CallStringProvider;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.ScalarProvider;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 /**
  *
  * @author Mehrtash Babadi &lt;mehrtash@broadinstitute.org&gt;
  */
 public final class CoverageModelEMAlgorithmNDArraySparkToggle<S extends AlleleMetadataProvider & CallStringProvider &
-        ScalarProvider> extends CoverageModelEMAlgorithm {
+        ScalarProvider> extends CoverageModelEMAlgorithm<S> {
 
     private final CoverageModelEMWorkspaceNDArraySparkToggle<S> ws;
 
     public CoverageModelEMAlgorithmNDArraySparkToggle(@Nonnull final CoverageModelEMParams params,
+                                                      @Nullable final String outputAbsolutePath,
+                                                      @Nonnull final S neutralState,
                                                       @Nonnull final CoverageModelEMWorkspaceNDArraySparkToggle<S> ws) {
-        super(params);
+        super(params, outputAbsolutePath, neutralState);
         this.ws = ws;
     }
 
@@ -72,5 +75,10 @@ public final class CoverageModelEMAlgorithmNDArraySparkToggle<S extends AlleleMe
     @Override @EvaluatesRDD
     public void saveModel(final String modelOutputPath) {
         ws.saveModel(modelOutputPath);
+    }
+
+    @Override @EvaluatesRDD
+    public void savePosteriors(final String posteriorOutputPath, final PosteriorVerbosityLevel verbosity) {
+        ws.savePosteriors(neutralState, posteriorOutputPath, verbosity, null);
     }
 }

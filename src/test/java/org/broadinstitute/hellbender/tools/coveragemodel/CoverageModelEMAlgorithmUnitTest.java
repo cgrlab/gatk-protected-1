@@ -37,7 +37,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
 
     private static final int NUMBER_OF_PARTITIONS = 7;
 
-    private static double CNV_EVENT_PROBABILITY = 0.001;
+    private static double CNV_EVENT_PROBABILITY = 0.0001;
     private static double CNV_EVENT_MEAN_SIZE = 50;
 
     private static ReadCountCollection testReadCounts;
@@ -96,10 +96,12 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
         ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
                 sexGenotypeData, copyNumberPosteriorCalculator, params, null,
                 1, null);
-        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
-        algo.runExpectationMaximization(true, "/Users/mehrtash/Data/Genome/PPCA/out/blah");
-        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah");
-        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
+        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params,
+                "/Users/mehrtash/Data/Genome/PPCA/out/blah", CopyNumberTriState.NEUTRAL, ws);
+        algo.runExpectationMaximization();
+        ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah/model_final");
+        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors_final",
+                PosteriorVerbosityLevel.FULL, null);
     }
 
 //    @Test(dataProvider = "ploidyAnnotsDataProvider")

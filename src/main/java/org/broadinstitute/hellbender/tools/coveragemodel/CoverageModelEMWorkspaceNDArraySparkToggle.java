@@ -408,7 +408,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                 });
 
         /* sent the new W to workers */
-        switch (params.getPrincipalMapCommunicationPolicy()) {
+        switch (params.getPrincipalMapSparkCommunicationPolicy()) {
             case BROADCAST_HASH_JOIN:
                 pushToWorkers(mapINDArrayToBlocks(filteredPrincipalLatentTargetMap),
                         (W, cb) -> cb.cloneWithUpdatedPrimitive("F_W_tl", W.get(cb.getTargetSpaceBlock())));
@@ -600,7 +600,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("E_STEP_GAMMA"));
         cacheWorkers("after E-step for sample unexplained variance initialization");
 
-        final double gammaLowerBound = 0.0;
+        final double gammaLowerLimit = 0.0;
         final java.util.function.Function<Map<Integer, Double>, Map<Integer, Double>> objFunc = arg -> {
             if (arg.isEmpty()) { /* nothing to evaluate */
                 return Collections.emptyMap();
@@ -624,9 +624,9 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                 params.getGammaSolverType().getSolverFactory(), numSamples);
         IntStream.range(0, numSamples)
                 .forEach(si -> {
-                    final double x0 = FastMath.max(gammaLowerBound + CoverageModelEMParams.GAMMA_MIN_STARTING_POINT,
-                            FastMath.min(sampleUnexplainedVariance.getDouble(si), 0.5 * (CoverageModelEMParams.GAMMA_UPPER_LIMIT - gammaLowerBound)));
-                    syncSolver.add(si, gammaLowerBound, CoverageModelEMParams.GAMMA_UPPER_LIMIT, x0,
+                    final double x0 = FastMath.max(gammaLowerLimit + params.getGammaMinimumStartingPoint(),
+                            sampleUnexplainedVariance.getDouble(si));
+                    syncSolver.add(si, gammaLowerLimit, params.getGammaUpperLimit(), x0,
                             params.getGammaAbsoluteTolerance(), params.getGammaRelativeTolerance(),
                             params.getGammaMaximumIterations());
                 });
@@ -639,7 +639,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                         final int sampleIndex = entry.getKey();
                         final SynchronizedUnivariateSolver.UnivariateSolverSummary summary = entry.getValue();
                         double val = summary.status.equals(SynchronizedUnivariateSolver.UnivariateSolverStatus.SUCCESS) ?
-                                summary.x : gammaLowerBound;
+                                summary.x : gammaLowerLimit;
                         newSampleUnexplainedVariance.put(sampleIndex, 0, val);
                         numberOfEvaluations.add(summary.evaluations);
                     });
@@ -1033,6 +1033,9 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         final int maxIters = params.getPsiMaxIterations();
         final double absTol = params.getPsiAbsoluteTolerance();
         final double relTol = params.getPsiRelativeTolerance();
+        final double psiUpperLimit = params.getPsiUpperLimit();
+        final double psiMinStartingPoint = params.getPsiMinimumStartingPoint();
+
         final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
                 new UnivariateSolverDescription(absTol, relTol, DEFAULT_FUNCTION_EVALUATION_ACCURACY));
 
@@ -1040,7 +1043,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         switch (params.getPsiSolverMode()) {
             case PSI_TARGET_RESOLVED: /* done on the compute blocks */
                 mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_PSI")
-                        .updateTargetUnexplainedVarianceTargetResolved(maxIters, solver));
+                        .updateTargetUnexplainedVarianceTargetResolved(maxIters, psiUpperLimit, psiMinStartingPoint,
+                                solver));
                 break;
 
             case PSI_ISOTROPIC: /* done on the driver node */
@@ -1088,9 +1092,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         double newIsotropicPsi;
         try {
             newIsotropicPsi = solver.solve(params.getPsiMaxIterations(), objFunc,
-                    psiLowerBound, CoverageModelEMParams.PSI_UPPER_LIMIT,
-                    FastMath.max(psiLowerBound + CoverageModelEMParams.PSI_MIN_STARTING_POINT,
-                            FastMath.min(oldIsotropicPsi, 0.5 * CoverageModelEMParams.PSI_UPPER_LIMIT)));
+                    psiLowerBound, params.getPsiUpperLimit(),
+                    FastMath.max(psiLowerBound + params.getPsiMinimumStartingPoint(), oldIsotropicPsi));
         } catch (NoBracketingException e) {
             logger.warn("Root of M-step optimality equation for Psi could be bracketed.");
             newIsotropicPsi = oldIsotropicPsi;
@@ -1196,7 +1199,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         final int iters = sig.getInteger("iterations");
         final INDArray W_tl_new = sig.getINDArray("x");
 
-        switch (params.getPrincipalMapCommunicationPolicy()) {
+        switch (params.getPrincipalMapSparkCommunicationPolicy()) {
             case BROADCAST_HASH_JOIN:
                 pushToWorkers(mapINDArrayToBlocks(W_tl_new), (W, cb) ->
                         cb.cloneWithUpdatedPrimitive("W_tl", W.get(cb.getTargetSpaceBlock())));
@@ -1561,8 +1564,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                 prevCachedComputeRDDDeque.removeFirst().unpersist(true);
                 prevCachedComputeRDDDeque.addLast(computeRDD);
             }
-            if (params.checkpointingEnabled()) {
-                if (cacheCallCounter == params.getCheckpointingInterval()) {
+            if (params.isRDDCheckpointingEnabled()) {
+                if (cacheCallCounter == params.getRDDCheckpointingInterval()) {
                     logger.debug("Checkpointing compute RDD...");
                     computeRDD.checkpoint();
                     if (prevCheckpointedComputeRDD != null) {

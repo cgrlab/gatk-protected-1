@@ -23,6 +23,9 @@ import java.util.function.Supplier;
 
 public abstract class CoverageModelEMAlgorithm<S> {
 
+    public static final String POSTERIOR_CHECKPOINT_PATH_PREFIX = "posteriors_checkpoint";
+    public static final String MODEL_CHECKPOINT_PATH_PREFIX = "model_checkpoint";
+
     protected final Logger logger = LogManager.getLogger(CoverageModelEMAlgorithm.class);
 
     protected final CoverageModelEMParams params;
@@ -247,9 +250,9 @@ public abstract class CoverageModelEMAlgorithm<S> {
 
             if (params.isModelCheckpointingEnabled() && iterInfo.iter % params.getModelCheckpointingInterval() == 0) {
                 final String modelOutputAbsolutePath = new File(outputAbsolutePath,
-                        String.format("model_checkpoint_iter_%d", iterInfo.iter)).getAbsolutePath();
+                        String.format("%s_iter_%d", MODEL_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
                 final String posteriorOutputAbsolutePath = new File(outputAbsolutePath,
-                        String.format("posteriors_checkpoint_iter_%d", iterInfo.iter)).getAbsolutePath();
+                        String.format("%s_iter_%d", POSTERIOR_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
                 /* the following will automatically create the directory if it doesn't exist */
                 saveModel(modelOutputAbsolutePath);
                 savePosteriors(posteriorOutputAbsolutePath, PosteriorVerbosityLevel.BASIC);
@@ -329,7 +332,7 @@ public abstract class CoverageModelEMAlgorithm<S> {
 
             if (params.isModelCheckpointingEnabled() && iterInfo.iter % params.getModelCheckpointingInterval() == 0) {
                 final String posteriorOutputAbsolutePath = new File(outputAbsolutePath,
-                        String.format("posterior_checkpoint_iter_%d", iterInfo.iter)).getAbsolutePath();
+                        String.format("%s_iter_%d", POSTERIOR_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
                 /* the following will automatically create the directory if it doesn't exist */
                 savePosteriors(posteriorOutputAbsolutePath, PosteriorVerbosityLevel.BASIC);
             }

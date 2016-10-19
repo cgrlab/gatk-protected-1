@@ -37,6 +37,8 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
 
     private final Logger logger = LogManager.getLogger(CoverageModellerSparkToggle.class);
 
+    private static final String FINAL_MODEL_PATHNAME = "model_final";
+
     private static final String CONTIG_PLOIDY_ANNOTATIONS_TABLE_LONG_NAME = "contigAnnotationsTable";
     private static final String CONTIG_PLOIDY_ANNOTATIONS_TABLE_SHORT_NAME = "annots";
 
@@ -210,7 +212,7 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
         if (model == null) {
             algo.runExpectationMaximization();
             logger.info("Saving the model to disk...");
-            ws.saveModel(new File(outputPath, "model_final").getAbsolutePath());
+            ws.saveModel(new File(outputPath, FINAL_MODEL_PATHNAME).getAbsolutePath());
         } else {
             algo.runExpectation();
         }

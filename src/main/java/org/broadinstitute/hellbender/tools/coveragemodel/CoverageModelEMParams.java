@@ -88,7 +88,7 @@ public class CoverageModelEMParams {
     public static final String ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED_SHORT_NAME = "APSMS";
     public static final String ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED_LONG_NAME = "adaptivePsiSolverModeSwitching";
 
-    public static final double DEFAULT_PSI_UPPER_LIMIT = 0.1;
+    public static final double DEFAULT_PSI_UPPER_LIMIT = 0.5;
     public static final String PSI_UPPER_LIMIT_SHORT_NAME = "PUL";
     public static final String PSI_UPPER_LIMIT_LONG_NAME = "psiUpperLimit";
 
@@ -216,7 +216,7 @@ public class CoverageModelEMParams {
     public static final String MODEL_CHECKPOINTING_PATH_SHORT_NAME = "MCPP";
     public static final String MODEL_CHECKPOINTING_PATH_LONG_NAME = "modelCheckpointingPath";
 
-    public static final boolean DEFAULT_EXTENDED_POSTERIOR_OUTPUT_ENABLED = false;
+    public static final boolean DEFAULT_EXTENDED_POSTERIOR_OUTPUT_ENABLED = true;
     public static final String EXTENDED_POSTERIOR_OUTPUT_ENABLED_SHORT_NAME = "XPO";
     public static final String EXTENDED_POSTERIOR_OUTPUT_ENABLED_LONG_NAME = "extendedPosteriorOutputEnabled";
 

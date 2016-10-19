@@ -1,6 +1,7 @@
 package org.broadinstitute.hellbender.tools.coveragemodel;
 
 import com.google.common.annotations.VisibleForTesting;
+import htsjdk.variant.variantcontext.writer.VariantContextWriter;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
@@ -31,15 +32,22 @@ import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearS
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray.ExitStatus;
 import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedUnivariateSolver;
 import org.broadinstitute.hellbender.tools.coveragemodel.math.UnivariateSolverDescription;
-import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
-import org.broadinstitute.hellbender.tools.exome.ReadCountRecord;
-import org.broadinstitute.hellbender.tools.exome.Target;
+import org.broadinstitute.hellbender.tools.coveragemodel.nd4jutils.Nd4jIOUtils;
+import org.broadinstitute.hellbender.tools.exome.*;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
+import org.broadinstitute.hellbender.utils.SimpleInterval;
+import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.AlleleMetadataProvider;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.CallStringProvider;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.ScalarProvider;
+import org.broadinstitute.hellbender.utils.hmm.segmentation.HiddenMarkovModelPostProcessor;
+import org.broadinstitute.hellbender.utils.hmm.segmentation.HiddenStateSegmentRecordWriter;
 import org.broadinstitute.hellbender.utils.param.ParamUtils;
+import org.broadinstitute.hellbender.utils.tsv.DataLine;
+import org.broadinstitute.hellbender.utils.tsv.TableColumnCollection;
+import org.broadinstitute.hellbender.utils.tsv.TableWriter;
+import org.broadinstitute.hellbender.utils.variant.GATKVariantContextUtils;
 import org.nd4j.linalg.api.buffer.DataBuffer;
 import org.nd4j.linalg.api.buffer.util.DataTypeUtil;
 import org.nd4j.linalg.api.ndarray.INDArray;
@@ -50,6 +58,10 @@ import scala.Tuple2;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.Writer;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -690,8 +702,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         return sig;
     }
 
-    @Override @EvaluatesRDD @UpdatesRDD @CachesRDD
-    public List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> getCopyRatioHiddenMarkovModelResults() {
+    @EvaluatesRDD @UpdatesRDD @CachesRDD
+    private List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> getCopyRatioHiddenMarkovModelResults() {
         mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("E_STEP_C"));
         cacheWorkers("after E-step for copy ratio HMM result generation");
         final List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> result;
@@ -1322,7 +1334,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      * Fetch the log likelihood from compute block(s)
      * @return log likelihood normalized per sample per target
      */
-    @Override @EvaluatesRDD
+    @EvaluatesRDD
     public double getLogLikelihood() {
         return Arrays.stream(getLogLikelihoodPerSample()).reduce((a, b) -> a + b).orElse(Double.NaN) / numSamples;
     }
@@ -1331,7 +1343,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      * Fetch the log likelihood from compute block(s)
      * @return log likelihood normalized per sample per target
      */
-    @Override @EvaluatesRDD @CachesRDD
+    @EvaluatesRDD @CachesRDD
     public double[] getLogLikelihoodPerSample() {
         updateLogLikelihoodCaches();
 
@@ -1668,40 +1680,34 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      */
     private Stream<LinearSpaceBlock> targetBlockStream() { return targetBlocks.stream(); }
 
-    public Partitioner getTargetSpacePartitioner() {
-        return new HashPartitioner(numTargetBlocks);
-    }
 
-    @Override
-    public INDArray fetchTargetMeanBias() {
+
+
+
+
+
+
+    private INDArray fetchTargetMeanBias() {
         return fetchFromWorkers("m_t", 1);
     }
 
-    @Override
-    public double[] fetchSampleUnexplainedVariance() {
-        return sampleUnexplainedVariance.data().asDouble();
-    }
-
-    public INDArray fetchTotalUnexplainedVariance() {
+    private INDArray fetchTotalUnexplainedVariance() {
         return fetchFromWorkers("tot_Psi_st", 1);
     }
 
-    public INDArray fetchTotalNoise() {
+    private INDArray fetchTotalNoise() {
         return fetchFromWorkers("Wz_st", 1);
     };
 
-    @Override
-    public INDArray fetchTargetUnexplainedVariance() {
+    private INDArray fetchTargetUnexplainedVariance() {
         return fetchFromWorkers("Psi_t", 1);
     }
 
-    @Override
-    public INDArray fetchPrincipalLatentToTargetMap() {
+    private INDArray fetchPrincipalLatentToTargetMap() {
         return fetchFromWorkers("W_tl", 0);
     }
 
-    @Override
-    public ImmutablePair<INDArray, INDArray> fetchCopyRatioMaxLikelihoodResults() {
+    private ImmutablePair<INDArray, INDArray> fetchCopyRatioMaxLikelihoodResults() {
 
         final INDArray M_Psi_inv_st = fetchFromWorkers("M_Psi_inv_st", 1);
         final INDArray log_nu_st = fetchFromWorkers("log_nu_st", 1);
@@ -1714,43 +1720,148 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                 M_Psi_inv_st);
     }
 
-
-    @Override
-    public INDArray fetchSampleMeanLogReadDepths() {
-        return sampleMeanLogReadDepths;
-    }
-
-    @Override
-    public INDArray fetchSampleVarLogReadDepths() {
-        return sampleVarLogReadDepths;
-    }
-
-    @Override
-    protected double[] vectorToArray(final INDArray vec) {
-        final int dim = vec.length();
-        return IntStream.range(0, dim).mapToDouble(vec::getDouble).toArray();
-    }
-
-    @Override
-    protected double[] getMatrixRow(final INDArray mat, final int rowIndex) {
-        final INDArray row = mat.getRow(rowIndex);
-        final int dim = row.length();
-        return IntStream.range(0, dim).mapToDouble(row::getDouble).toArray();
-
-    }
-
-    @Override
-    protected double[] getMatrixColumn(final INDArray mat, final int colIndex) {
-        final INDArray col = mat.getColumn(colIndex);
-        final int dim = col.length();
-        return IntStream.range(0, dim).mapToDouble(col::getDouble).toArray();
-    }
-
     @Override
     public void saveModel(@Nonnull final String outputPath) {
         logger.info("Saving the model to disk...");
         CoverageModelParametersNDArray.write(new CoverageModelParametersNDArray(processedTargetList,
                 fetchTargetMeanBias(), fetchTargetUnexplainedVariance(), fetchPrincipalLatentToTargetMap()), outputPath);
     }
+
+
+    /* write copy ratio MLE results to file */
+    @Override
+    protected void saveCopyRatioMLE(final String outputPath) {
+        final ImmutablePair<INDArray, INDArray> copyRatioMLEData = fetchCopyRatioMaxLikelihoodResults();
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final List<String> targetNames = processedReadCounts.targets().stream()
+                .map(Target::getName).collect(Collectors.toList());
+
+        final File copyRatioMLEFile = new File(outputPath, COPY_RATIO_MLE_FILENAME);
+        Nd4jIOUtils.writeNDArrayToTextFile(copyRatioMLEData.left, copyRatioMLEFile, sampleNames, targetNames);
+
+        final File copyRatioPrecisionFile = new File(outputPath, COPY_RATIO_PRECISION_FILENAME);
+        Nd4jIOUtils.writeNDArrayToTextFile(copyRatioMLEData.right, copyRatioPrecisionFile, sampleNames, targetNames);
+    }
+
+    /* write read depth posteriors to file */
+    @Override
+    protected void saveReadDepthPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final INDArray combinedReadDepthPosteriors = Nd4j.hstack(sampleMeanLogReadDepths, sampleVarLogReadDepths);
+        final File sampleReadDepthPosteriorsFile = new File(outputPath, SAMPLE_READ_DEPTH_POSTERIOS_FILENAME);
+        Nd4jIOUtils.writeNDArrayToTextFile(combinedReadDepthPosteriors, sampleReadDepthPosteriorsFile,
+                sampleNames, Arrays.asList("READ_DEPTH_MEAN", "READ_DEPTH_VAR"));
+    }
+
+    /* write log likelihood per sample to file */
+    @Override
+    protected void saveLogLikelihoodPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final File sampleLogLikelihoodsFile = new File(outputPath, SAMPLE_LOG_LIKELIHOODS_FILENAME);
+        final INDArray sampleLogLikelihoods = Nd4j.create(getLogLikelihoodPerSample(), new int[] {numSamples, 1});
+        Nd4jIOUtils.writeNDArrayToTextFile(sampleLogLikelihoods, sampleLogLikelihoodsFile,
+                sampleNames, Collections.singletonList("LOG_LIKELIHOOD"));
+    }
+
+    /* write sample-specific unexplained variance to file */
+    @Override
+    protected void saveGammaPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final File sampleUnexplainedVarianceFile = new File(outputPath, SAMPLE_UNEXPLAINED_VARIANCE_FILENAME);
+        Nd4jIOUtils.writeNDArrayToTextFile(sampleUnexplainedVariance, sampleUnexplainedVarianceFile,
+                sampleNames, Collections.singletonList("SAMPLE_UNEXPLAINED_VARIANCE"));
+    }
+
+    /* write bias latent posteriors to file */
+    @Override
+    protected void saveBiasLatentPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final File sampleBiasLatentPosteriorsFile = new File(outputPath, SAMPLE_BIAS_LATENT_POSTERIORS_FILENAME);
+        Nd4jIOUtils.writeNDArrayToTextFile(sampleBiasLatentPosteriorFirstMoments, sampleBiasLatentPosteriorsFile,
+                sampleNames, IntStream.range(0, numLatents)
+                        .mapToObj(li -> String.format("PC_%d", li)).collect(Collectors.toList()));
+    }
+
+    /* segmentation, vcf creation */
+    @Override
+    protected void saveCopyRatioPosteriors(final String outputPath, final S referenceState, final String commandLine) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> copyRatioHMMResult =
+                getCopyRatioHiddenMarkovModelResults();
+        final HiddenMarkovModelPostProcessor<CoverageModelCopyRatioEmissionData, S, Target> copyRatioProcessor =
+                new HiddenMarkovModelPostProcessor<>(
+                        sampleNames,
+                        copyRatioHMMResult.stream()
+                                .map(CopyRatioHiddenMarkovModelResults::getTargetList)
+                                .map(HashedListTargetCollection::new)
+                                .collect(Collectors.toList()),
+                        copyRatioHMMResult.stream()
+                                .map(CopyRatioHiddenMarkovModelResults::getForwardBackwardResult)
+                                .collect(Collectors.toList()),
+                        copyRatioHMMResult.stream()
+                                .map(CopyRatioHiddenMarkovModelResults::getViterbiResult)
+                                .collect(Collectors.toList()),
+                        referenceState);
+
+        final File segmentsFile = new File(outputPath, COPY_RATIO_SEGMENTS_FILENAME);
+        final File vcfFile = new File(outputPath, COPY_RATIO_GENOTYPES_FILENAME);
+        try (final HiddenStateSegmentRecordWriter<S, Target> segWriter = new HiddenStateSegmentRecordWriter<>(segmentsFile);
+             final VariantContextWriter VCFWriter  = GATKVariantContextUtils.createVCFWriter(vcfFile, null, false)) {
+            copyRatioProcessor.writeSegmentsToTableWriter(segWriter);
+            copyRatioProcessor.writeVariantsToVCFWriter(VCFWriter, "CNV", commandLine);
+        } catch (final IOException ex) {
+            throw new UserException.CouldNotCreateOutputFile(segmentsFile, "Could not create copy ratio segments file");
+        }
+
+        /* also, save Viterbi as a matrix */
+        if (params.extendedPosteriorOutputEnabled()) {
+            final File copyRatioViterbiFile = new File(outputPath, COPY_RATIO_VITERBI_FILENAME);
+            final List<TargetCollection<Target>> sampleTargetCollections = new ArrayList<>(numSamples);
+            for (int sampleIndex = 0; sampleIndex < numSamples; sampleIndex++) {
+                sampleTargetCollections.add(new HashedListTargetCollection<>(copyRatioHMMResult.get(sampleIndex).getTargetList()));
+            }
+            final List<String> targetNames = processedReadCounts.targets().stream()
+                    .map(Target::getName).collect(Collectors.toList());
+            Nd4jIOUtils.writeNDArrayToTextFile(getViterbiAsNDArray(copyRatioHMMResult, sampleTargetCollections),
+                    copyRatioViterbiFile, sampleNames, targetNames);
+        }
+    }
+
+    @Override
+    protected void saveExtendedPosteriors(final String outputPath) {
+        final List<String> sampleNames = processedReadCounts.columnNames();
+        final List<String> targetNames = processedReadCounts.targets().stream()
+                .map(Target::getName).collect(Collectors.toList());
+
+        /* save total unexplained variance as a matrix */
+        final File totalExplainedVarianceFile = new File(outputPath, TOTAL_UNEXPLAINED_VARIANCE_FILENAME);
+        Nd4jIOUtils.writeNDArrayToTextFile(fetchTotalUnexplainedVariance(), totalExplainedVarianceFile,
+                sampleNames, targetNames);
+
+        /* save total noise as a matrix */
+        final File totalNoiseFile = new File(outputPath, TOTAL_REMOVED_BIAS_FILENAME);
+        Nd4jIOUtils.writeNDArrayToTextFile(fetchTotalNoise(), totalExplainedVarianceFile,
+                sampleNames, targetNames);
+    }
+
+    private INDArray getViterbiAsNDArray(final List<CopyRatioHiddenMarkovModelResults<CoverageModelCopyRatioEmissionData, S>> copyRatioHMMResult,
+                                         final List<TargetCollection<Target>> sampleTargetCollections) {
+        final INDArray res = Nd4j.create(numSamples, numTargets);
+        for (int ti = 0; ti < numTargets; ti++) {
+            final Target target = processedTargetList.get(ti);
+            for (int si = 0; si < numSamples; si++) {
+                final TargetCollection<Target> sampleTargets = sampleTargetCollections.get(si);
+                final List<S> sampleCalls = copyRatioHMMResult.get(si).getViterbiResult();
+                final int sampleTargetIndex = sampleTargets.index(target);
+                if (sampleTargetIndex >= 0) {
+                    res.put(si, ti, sampleCalls.get(sampleTargetIndex).getScalar());
+                } else {
+                    res.put(si, ti, 0);
+                }
+            }
+        }
+        return res;
+    }
+
 
 }

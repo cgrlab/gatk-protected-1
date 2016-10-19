@@ -92,7 +92,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
         params = new CoverageModelEMParams();
                 //.enableFourierRegularization()
                 //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
-        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
+        params.disableGammaUpdate();
         ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
                 sexGenotypeData, copyNumberPosteriorCalculator, params, null,
                 1, null);
@@ -108,15 +108,15 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
 //    public void somaticTestLocal(@Nonnull final GermlinePloidyAnnotatedTargetCollection ploidyAnnots) {
 //        params = new CoverageModelEMParams();
 //        final CoverageModelParametersNDArray model =
-//                CoverageModelParametersNDArray.read("/Users/mehrtash/Data/Genome/PPCA/out/blah");
-//        model.arePrincipalComponenetsOrthogonal(1e-4, true, logger);
-//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
+//                CoverageModelParametersNDArray.read("/Users/mehrtash/Data/Genome/PPCA/out/blah/model_final");
 //        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
 //                sexGenotypeData, copyNumberPosteriorCalculator, params, model,
 //                1, null);
-//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
-//        algo.runExpectation(true);
-//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah2", null);
+//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params,
+//                "/Users/mehrtash/Data/Genome/PPCA/out/blah2", CopyNumberTriState.NEUTRAL, ws);
+//        algo.runExpectation();
+//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah2",
+//                PosteriorVerbosityLevel.FULL, null);
 //    }
 
 //

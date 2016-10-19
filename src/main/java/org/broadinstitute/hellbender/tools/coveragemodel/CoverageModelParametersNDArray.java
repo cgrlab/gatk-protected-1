@@ -13,14 +13,10 @@ import org.nd4j.linalg.api.buffer.util.DataTypeUtil;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.indexing.NDArrayIndex;
-import org.nd4j.linalg.indexing.NDArrayIndexAll;
 
 import javax.annotation.Nonnull;
 import java.io.*;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -32,9 +28,10 @@ public class CoverageModelParametersNDArray implements Serializable {
 
     private static final long serialVersionUID = -4350342293001054849L;
 
-    public static final String TARGET_MEAN_BIAS_OUTPUT_FILE = "target_mean_bias.nd4j";
-    public static final String TARGET_UNEXPLAINED_VARIANCE_OUTPUT_FILE = "target_unexplained_variance.nd4j";
-    public static final String PRINCIPAL_LATENT_TO_TARGET_MAP_OUTPUT_FILE = "principal_map.nd4j";
+    public static final String TARGET_MEAN_BIAS_OUTPUT_FILE = "target_mean_bias.tsv";
+    public static final String TARGET_UNEXPLAINED_VARIANCE_OUTPUT_FILE = "target_unexplained_variance.tsv";
+    public static final String PRINCIPAL_LATENT_TO_TARGET_MAP_OUTPUT_FILE = "principal_components.tsv";
+    public static final String PRINCIPAL_LATENT_TO_TARGET_MAP_NORM2_OUTPUT_FILE = "principal_components_norm2.tsv";
     public static final String TARGET_LIST_OUTPUT_FILE = "targets.tsv";
 
     private final List<Target> targetList;
@@ -141,7 +138,8 @@ public class CoverageModelParametersNDArray implements Serializable {
      * @param tol orthogonality tolerance
      * @param logResults print results or not
      */
-    public boolean arePrincipalComponenetsOrthogonal(final double tol, final boolean logResults, @Nonnull final Logger logger) {
+    public boolean checkPrincipalComponenetsAreOrthogonal(final double tol, final boolean logResults,
+                                                          @Nonnull final Logger logger) {
         ParamUtils.isPositive(tol, "Orthogonality tolerance must be positive");
         boolean orthogonal = true;
         for (int mu = 0; mu < numLatents; mu++) {
@@ -188,13 +186,13 @@ public class CoverageModelParametersNDArray implements Serializable {
         }
 
         final File targetMeanBiasFile = new File(modelPath, TARGET_MEAN_BIAS_OUTPUT_FILE);
-        final INDArray targetMeanBias = Nd4jIOUtils.readNDArrayFromFile(targetMeanBiasFile);
+        final INDArray targetMeanBias = Nd4jIOUtils.readNDArrayFromTextFile(targetMeanBiasFile);
 
         final File targetUnexplainedVarianceFile = new File(modelPath, TARGET_UNEXPLAINED_VARIANCE_OUTPUT_FILE);
-        final INDArray targetUnexplainedVariance = Nd4jIOUtils.readNDArrayFromFile(targetUnexplainedVarianceFile);
+        final INDArray targetUnexplainedVariance = Nd4jIOUtils.readNDArrayFromTextFile(targetUnexplainedVarianceFile);
 
         final File principalLatentToTargetMapFile = new File(modelPath, PRINCIPAL_LATENT_TO_TARGET_MAP_OUTPUT_FILE);
-        final INDArray principalLatentToTargetMap = Nd4jIOUtils.readNDArrayFromFile(principalLatentToTargetMapFile);
+        final INDArray principalLatentToTargetMap = Nd4jIOUtils.readNDArrayFromTextFile(principalLatentToTargetMapFile);
 
         return new CoverageModelParametersNDArray(targetList, targetMeanBias, targetUnexplainedVariance,
                 principalLatentToTargetMap);
@@ -213,17 +211,35 @@ public class CoverageModelParametersNDArray implements Serializable {
         final File targetListFile = new File(outputPath, TARGET_LIST_OUTPUT_FILE);
         TargetWriter.writeTargetsToFile(targetListFile, model.getTargetList());
 
+        final List<String> targetNames = model.getTargetList().stream()
+                .map(Target::getName).collect(Collectors.toList());
+
         /* write target mean bias to file */
         final File targetMeanBiasFile = new File(outputPath, TARGET_MEAN_BIAS_OUTPUT_FILE);
-        Nd4jIOUtils.writeNDArrayToFile(model.getTargetMeanBias(), targetMeanBiasFile);
+        Nd4jIOUtils.writeNDArrayToTextFile(model.getTargetMeanBias(), targetMeanBiasFile, null, targetNames);
 
         /* write target unexplained variance to file */
         final File targetUnexplainedVarianceFile = new File(outputPath, TARGET_UNEXPLAINED_VARIANCE_OUTPUT_FILE);
-        Nd4jIOUtils.writeNDArrayToFile(model.getTargetUnexplainedVariance(), targetUnexplainedVarianceFile);
+        Nd4jIOUtils.writeNDArrayToTextFile(model.getTargetUnexplainedVariance(), targetUnexplainedVarianceFile,
+                null, targetNames);
 
-        /* writer principal map to file */
+        /* write principal map to file */
+        final List<String> principalComponentNames = IntStream.range(0, model.getNumLatents())
+                .mapToObj(li -> String.format("PC_%d", li)).collect(Collectors.toList());
         final File principalLatentToTargetMapFile = new File(outputPath, PRINCIPAL_LATENT_TO_TARGET_MAP_OUTPUT_FILE);
-        Nd4jIOUtils.writeNDArrayToFile(model.getPrincipalLatentToTargetMap(), principalLatentToTargetMapFile);
+        Nd4jIOUtils.writeNDArrayToTextFile(model.getPrincipalLatentToTargetMap(), principalLatentToTargetMapFile,
+                targetNames, principalComponentNames);
+
+        /* write principal component norm2 to file */
+        final double[] principalComponentNorm2 = new double[model.numLatents];
+        final INDArray WTW = model.getPrincipalLatentToTargetMap().transpose().mmul(
+                model.getPrincipalLatentToTargetMap());
+        for (int li = 0; li < model.getNumLatents(); li++) {
+            principalComponentNorm2[li] = WTW.getDouble(li, li);
+        }
+        final File principalLatentToTargetMapNorm2File = new File(outputPath, PRINCIPAL_LATENT_TO_TARGET_MAP_NORM2_OUTPUT_FILE);
+        Nd4jIOUtils.writeNDArrayToTextFile(Nd4j.create(principalComponentNorm2, new int[] {1, model.getNumLatents()}),
+                principalLatentToTargetMapNorm2File, Collections.singletonList("NORM_2"), principalComponentNames);
     }
 
     /**

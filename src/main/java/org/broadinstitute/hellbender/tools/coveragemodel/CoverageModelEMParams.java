@@ -64,7 +64,7 @@ public class CoverageModelEMParams {
     public static final String MAX_E_STEP_CYCLES_SHORT_NAME = "MES";
     public static final String MAX_E_STEP_CYCLES_LONG_NAME = "maximumEStepCycles";
 
-    public static final int DEFAULT_MAX_EM_ITERATIONS = 10;
+    public static final int DEFAULT_MAX_EM_ITERATIONS = 20;
     public static final String MAX_EM_ITERATIONS_SHORT_NAME = "MEMI";
     public static final String MAX_EM_ITERATIONS_LONG_NAME = "maximumEMIterations";
 
@@ -76,7 +76,7 @@ public class CoverageModelEMParams {
     public static final String NUM_LATENTS_SHORT_NAME = "NL";
     public static final String NUM_LATENTS_LONG_NAME = "numLatents";
 
-    public static final PsiSolverMode DEFAULT_PSI_SOLVER_MODE = PsiSolverMode.PSI_ISOTROPIC;
+    public static final PsiSolverMode DEFAULT_PSI_SOLVER_MODE = PsiSolverMode.PSI_TARGET_RESOLVED;
     public static final String PSI_SOLVER_MODE_SHORT_NAME = "PSM";
     public static final String PSI_SOLVER_MODE_LONG_NAME = "psiSolverMode";
 
@@ -88,7 +88,7 @@ public class CoverageModelEMParams {
     public static final String ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED_SHORT_NAME = "APSMS";
     public static final String ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED_LONG_NAME = "adaptivePsiSolverModeSwitching";
 
-    public static final double DEFAULT_PSI_UPPER_LIMIT = 0.5;
+    public static final double DEFAULT_PSI_UPPER_LIMIT = 1.0;
     public static final String PSI_UPPER_LIMIT_SHORT_NAME = "PUL";
     public static final String PSI_UPPER_LIMIT_LONG_NAME = "psiUpperLimit";
 

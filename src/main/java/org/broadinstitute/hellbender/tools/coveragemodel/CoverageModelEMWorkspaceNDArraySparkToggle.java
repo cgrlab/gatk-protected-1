@@ -12,7 +12,6 @@ import org.apache.commons.math3.exception.NoBracketingException;
 import org.apache.commons.math3.exception.TooManyEvaluationsException;
 import org.apache.commons.math3.util.FastMath;
 import org.apache.spark.HashPartitioner;
-import org.apache.spark.Partitioner;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
@@ -30,23 +29,19 @@ import org.broadinstitute.hellbender.tools.coveragemodel.linalg.FourierLinearOpe
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.GeneralLinearOperator;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray;
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray.ExitStatus;
+import org.broadinstitute.hellbender.tools.coveragemodel.math.RobustBrentSolver;
 import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedUnivariateSolver;
 import org.broadinstitute.hellbender.tools.coveragemodel.math.UnivariateSolverDescription;
 import org.broadinstitute.hellbender.tools.coveragemodel.nd4jutils.Nd4jIOUtils;
 import org.broadinstitute.hellbender.tools.exome.*;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.SexGenotypeDataCollection;
-import org.broadinstitute.hellbender.utils.SimpleInterval;
-import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.AlleleMetadataProvider;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.CallStringProvider;
 import org.broadinstitute.hellbender.utils.hmm.interfaces.ScalarProvider;
 import org.broadinstitute.hellbender.utils.hmm.segmentation.HiddenMarkovModelPostProcessor;
 import org.broadinstitute.hellbender.utils.hmm.segmentation.HiddenStateSegmentRecordWriter;
 import org.broadinstitute.hellbender.utils.param.ParamUtils;
-import org.broadinstitute.hellbender.utils.tsv.DataLine;
-import org.broadinstitute.hellbender.utils.tsv.TableColumnCollection;
-import org.broadinstitute.hellbender.utils.tsv.TableWriter;
 import org.broadinstitute.hellbender.utils.variant.GATKVariantContextUtils;
 import org.nd4j.linalg.api.buffer.DataBuffer;
 import org.nd4j.linalg.api.buffer.util.DataTypeUtil;
@@ -59,9 +54,7 @@ import scala.Tuple2;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.Writer;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -157,6 +150,9 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
     /* $E[\gamma_s]$ */
     private final INDArray sampleUnexplainedVariance;
 
+    /* norm_2 of principal components */
+    private final INDArray principalComponentsNorm2;
+
     /**
      * Regularizer Fourier factors
      */
@@ -171,7 +167,6 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      *                     for different sex genotypes
      * @param sexGenotypeData an instance of {@link SexGenotypeDataCollection} for obtaining sample sex genotypes
      * @param params EM algorithm parameter oracle
-     * @param numTargetBlocks number of target space partitions (will be ignored if the Spark context is null)
      * @param ctx the Spark context
      */
     @UpdatesRDD @CachesRDD @EvaluatesRDD
@@ -181,7 +176,6 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                                                       @Nonnull final CopyRatioPosteriorCalculator<CoverageModelCopyRatioEmissionData, S> copyRatioPosteriorCalculator,
                                                       @Nonnull final CoverageModelEMParams params,
                                                       @Nullable final CoverageModelParametersNDArray model,
-                                                      final int numTargetBlocks,
                                                       @Nullable final JavaSparkContext ctx) {
         /* the super constructor takes care of filtering the reads and fetching germline ploidies */
         super(rawReadCounts, ploidyAnnots, sexGenotypeData, copyRatioPosteriorCalculator, params, model);
@@ -192,8 +186,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
             this.numTargetBlocks = 1;
         } else {
             sparkContextIsAvailable = true;
-            this.numTargetBlocks = ParamUtils.inRange(numTargetBlocks, 1, numTargets, "Number of target blocks must be " +
-                    "between 1 and the size of target space.");
+            this.numTargetBlocks = ParamUtils.inRange(params.getNumTargetSpaceParititions(), 1, numTargets,
+                    "Number of target blocks must be between 1 and the size of target space.");
         }
 
         /* Set Nd4j DType to Double in context */
@@ -209,6 +203,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         sampleBiasLatentPosteriorFirstMoments = Nd4j.zeros(numSamples, numLatents);
         sampleBiasLatentPosteriorSecondMoments = Nd4j.zeros(numSamples, numLatents, numLatents);
         sampleUnexplainedVariance = Nd4j.zeros(numSamples, 1);
+        principalComponentsNorm2 = Nd4j.zeros(1, numLatents);
 
         /* initialize the regularizer filter operator
          * note: the fourier operator is pre-multiplied by the filter strength */
@@ -632,8 +627,11 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
             return output;
         };
 
+        /* TODO */
+//        final SynchronizedUnivariateSolver syncSolver = new SynchronizedUnivariateSolver(objFunc,
+//                params.getGammaSolverType().getSolverFactory(), numSamples);
         final SynchronizedUnivariateSolver syncSolver = new SynchronizedUnivariateSolver(objFunc,
-                params.getGammaSolverType().getSolverFactory(), numSamples);
+                numSamples, RobustBrentSolver.MeritPolicy.LARGEST_ROOT, 10, 2);
         IntStream.range(0, numSamples)
                 .forEach(si -> {
                     final double x0 = FastMath.max(gammaLowerLimit + params.getGammaMinimumStartingPoint(),
@@ -650,8 +648,16 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                     .forEach(entry -> {
                         final int sampleIndex = entry.getKey();
                         final SynchronizedUnivariateSolver.UnivariateSolverSummary summary = entry.getValue();
-                        double val = summary.status.equals(SynchronizedUnivariateSolver.UnivariateSolverStatus.SUCCESS) ?
-                                summary.x : gammaLowerLimit;
+                        double val =  gammaLowerLimit;
+                        switch (summary.status) {
+                            case SUCCESS:
+                                val = summary.x;
+                                break;
+                            case TOO_MANY_EVALUATIONS:
+                                logger.warn("Could not locate the root of gamma -- increase the maximum number of" +
+                                        "function evaluations");
+                                break;
+                        }
                         newSampleUnexplainedVariance.put(sampleIndex, 0, val);
                         numberOfEvaluations.add(summary.evaluations);
                     });
@@ -1048,15 +1054,14 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         final double psiUpperLimit = params.getPsiUpperLimit();
         final double psiMinStartingPoint = params.getPsiMinimumStartingPoint();
 
-        final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
-                new UnivariateSolverDescription(absTol, relTol, DEFAULT_FUNCTION_EVALUATION_ACCURACY));
-
         logger.debug("Psi solver type: " + params.getPsiSolverMode().name());
         switch (params.getPsiSolverMode()) {
             case PSI_TARGET_RESOLVED: /* done on the compute blocks */
+//                final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
+//                        new UnivariateSolverDescription(absTol, relTol, DEFAULT_FUNCTION_EVALUATION_ACCURACY));
                 mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_PSI")
-                        .updateTargetUnexplainedVarianceTargetResolved(maxIters, psiUpperLimit, psiMinStartingPoint,
-                                solver));
+                        .updateTargetUnexplainedVarianceTargetResolved(maxIters, psiUpperLimit, absTol, relTol,
+                                10, 2));
                 break;
 
             case PSI_ISOTROPIC: /* done on the driver node */
@@ -1096,16 +1101,19 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         final double oldIsotropicPsi = fetchFromWorkers("Psi_t", 1).meanNumber().doubleValue();
 
         final double psiLowerBound = 0.0;
-        final UnivariateFunction objFunc = psi -> mapWorkersAndReduce(cb -> cb.calculateTargetSummedPsiGradient(psi), (a, b) -> a + b);
+        final UnivariateFunction objFunc = psi -> mapWorkersAndReduce(cb -> cb.calculateSampleTargetSummedPsiGradient(psi), (a, b) -> a + b);
+        final UnivariateFunction meritFunc = psi -> mapWorkersAndReduce(cb -> cb.calculateSampleTargetSummedPsiMerit(psi), (a, b) -> a + b);
 
-        final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
-                new UnivariateSolverDescription(params.getPsiAbsoluteTolerance(),
-                        params.getPsiRelativeTolerance(), DEFAULT_FUNCTION_EVALUATION_ACCURACY));
+//        final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
+//                new UnivariateSolverDescription(params.getPsiAbsoluteTolerance(),
+//                        params.getPsiRelativeTolerance(), DEFAULT_FUNCTION_EVALUATION_ACCURACY));
+
+        final RobustBrentSolver solver = new RobustBrentSolver(params.getPsiRelativeTolerance(),
+                params.getPsiAbsoluteTolerance(), DEFAULT_FUNCTION_EVALUATION_ACCURACY);
         double newIsotropicPsi;
         try {
-            newIsotropicPsi = solver.solve(params.getPsiMaxIterations(), objFunc,
-                    psiLowerBound, params.getPsiUpperLimit(),
-                    FastMath.max(psiLowerBound + params.getPsiMinimumStartingPoint(), oldIsotropicPsi));
+            newIsotropicPsi = solver.solve(params.getPsiMaxIterations(), objFunc, meritFunc, null,
+                    psiLowerBound, params.getPsiUpperLimit(), 10, 2);
         } catch (NoBracketingException e) {
             logger.warn("Root of M-step optimality equation for Psi could be bracketed.");
             newIsotropicPsi = oldIsotropicPsi;
@@ -1305,7 +1313,10 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      * @param WTW [W]^T [W]
      */
     private void orthogonalizeAndSortPrincipalMap(@Nonnull final INDArray WTW) {
-        final INDArray U = CoverageModelEMWorkspaceNDArrayUtils.getOrthogonalizerAndSorterTransformation(WTW, true, logger);
+        final ImmutablePair<INDArray, INDArray> ortho =
+                CoverageModelEMWorkspaceNDArrayUtils.getOrthogonalizerAndSorterTransformation(WTW, true, logger);
+        final INDArray eigs = ortho.left;
+        final INDArray U = ortho.right;
 
         /* update workers */
         pushToWorkers(U, (rot, cb) -> cb.cloneWithRotatedLatentSpace(rot));
@@ -1319,6 +1330,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                     .assign(U.mmul(sampleBiasLatentPosteriorSecondMoments.get(NDArrayIndex.point(si), NDArrayIndex.all(), NDArrayIndex.all()))
                             .mmul(U.transpose()));
         });
+        principalComponentsNorm2.assign(eigs);
+        System.out.println(eigs);
     }
 
     /**

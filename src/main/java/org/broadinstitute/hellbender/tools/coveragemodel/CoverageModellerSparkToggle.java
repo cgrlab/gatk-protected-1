@@ -98,14 +98,6 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
     public double meanEventSize = 70_000;
 
     @Argument(
-            doc = "Number of target space partitions (for Spark mode)",
-            fullName = TARGET_SPACE_PARTITIONS_LONG_NAME,
-            shortName = TARGET_SPACE_PARTITIONS_SHORT_NAME,
-            optional = true
-    )
-    protected int targetSpacePartitions = 10;
-
-    @Argument(
             doc = "Output path for saving the results",
             fullName = OUTPUT_PATH_LONG_NAME,
             shortName = OUTPUT_PATH_SHORT_NAME,
@@ -205,7 +197,7 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
         logger.info("Initializing the EM algorithm workspace...");
         final CoverageModelEMWorkspaceNDArraySparkToggle<CopyNumberTriState> ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(
                 readCounts, ploidyAnnotatedTargetCollection, sexGenotypeDataCollection, copyNumberPosteriorCalculator,
-                params, model, targetSpacePartitions, ctx);
+                params, model, ctx);
 
         final CoverageModelEMAlgorithmNDArraySparkToggle<CopyNumberTriState> algo =
                 new CoverageModelEMAlgorithmNDArraySparkToggle<>(params,outputPath, CopyNumberTriState.NEUTRAL, ws);

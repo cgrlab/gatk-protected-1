@@ -92,10 +92,9 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
         params = new CoverageModelEMParams();
                 //.enableFourierRegularization()
                 //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
-        params.disableGammaUpdate();
+//        params.disableGammaUpdate();
         ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
-                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
-                1, null);
+                sexGenotypeData, copyNumberPosteriorCalculator, params, null, null);
         algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params,
                 "/Users/mehrtash/Data/Genome/PPCA/out/blah", CopyNumberTriState.NEUTRAL, ws);
         algo.runExpectationMaximization();
@@ -141,16 +140,17 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
 //        params = new CoverageModelEMParams();
 //                //.enableFourierRegularization()
 //                //.setFourierFactors(FourierLinearOperator.getMidpassFilterFourierFactors(1000, 0, 100));
-//        params.setWSolverType(CoverageModelEMParams.WSolverType.W_SOLVER_LOCAL);
+//        params.setNumTargetSpacePartitions(NUMBER_OF_PARTITIONS);
 //        final JavaSparkContext ctx = SparkContextFactory.getTestSparkContext(nd4jSparkProperties);
 //        final String checkpointingPath = createTempDir("coverage_model_spark_checkpoint").getAbsolutePath();
 //        ctx.setCheckpointDir(checkpointingPath);
 //        ws = new CoverageModelEMWorkspaceNDArraySparkToggle<>(testReadCounts, ploidyAnnots,
-//                sexGenotypeData, copyNumberPosteriorCalculator, params, null,
-//                NUMBER_OF_PARTITIONS, ctx);
-//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params, ws);
-//        algo.runExpectationMaximization(true, "/Users/mehrtash/Data/Genome/PPCA/out/blah");
-//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors", null);
+//                sexGenotypeData, copyNumberPosteriorCalculator, params, null, ctx);
+//        algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params,
+//                "/Users/mehrtash/Data/Genome/PPCA/out/blah", CopyNumberTriState.NEUTRAL, ws);
+//        algo.runExpectationMaximization();
+//        ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors",
+//                PosteriorVerbosityLevel.FULL, null);
 //    }
 
     @DataProvider(name = "ploidyAnnotsDataProvider")

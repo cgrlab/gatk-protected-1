@@ -12,6 +12,7 @@ import org.broadinstitute.hellbender.tools.coveragemodel.cachemanager.Duplicable
 import org.broadinstitute.hellbender.tools.coveragemodel.cachemanager.DuplicableNDArray;
 import org.broadinstitute.hellbender.tools.coveragemodel.cachemanager.DuplicableNumber;
 import org.broadinstitute.hellbender.tools.coveragemodel.cachemanager.ImmutableComputableGraph;
+import org.broadinstitute.hellbender.tools.coveragemodel.math.RobustBrentSolver;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.param.ParamUtils;
 import org.junit.Assert;
@@ -423,6 +424,23 @@ public class CoverageModelEMComputeBlockNDArray {
         };
     }
 
+    private UnivariateFunction createPsiSolverMeritFunction(final int targetIndex,
+                                                            @Nonnull final INDArray M_st,
+                                                            @Nonnull final INDArray Sigma_st,
+                                                            @Nonnull final INDArray gamma_s,
+                                                            @Nonnull final INDArray B_st) {
+        final INDArray M_s = M_st.get(NDArrayIndex.all(), NDArrayIndex.point(targetIndex));
+        final INDArray Sigma_s = Sigma_st.get(NDArrayIndex.all(), NDArrayIndex.point(targetIndex));
+        final INDArray B_s = B_st.get(NDArrayIndex.all(), NDArrayIndex.point(targetIndex));
+        return psi -> {
+            final INDArray totalPsi = Sigma_s.add(gamma_s).add(psi);
+            final INDArray totalMaskedPsiInverse = M_s.div(totalPsi);
+            final INDArray logTotalPsi = Transforms.log(totalPsi);
+
+            return M_s.mul(logTotalPsi).addi(B_s.mul(totalMaskedPsiInverse)).muli(-0.5).sumNumber().doubleValue();
+        };
+    }
+
     private double calculatePsiCurvature(final int targetIndex,
                                          final double psi,
                                          @Nonnull final INDArray M_st,
@@ -443,7 +461,7 @@ public class CoverageModelEMComputeBlockNDArray {
      * @param psi test value
      * @return
      */
-    public double calculateTargetSummedPsiGradient(final double psi) {
+    public double calculateSampleTargetSummedPsiGradient(final double psi) {
         final INDArray M_st = getINDArrayFromCache("M_st");
         final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
         final INDArray B_st = getINDArrayFromCache("B_st");
@@ -454,13 +472,33 @@ public class CoverageModelEMComputeBlockNDArray {
     }
 
     /**
+     * Helper function for isotropic update of Psi
+     * @param psi test value
+     * @return
+     */
+    public double calculateSampleTargetSummedPsiMerit(final double psi) {
+        final INDArray M_st = getINDArrayFromCache("M_st");
+        final INDArray Sigma_st = getINDArrayFromCache("Sigma_st");
+        final INDArray B_st = getINDArrayFromCache("B_st");
+        final INDArray gamma_s = getINDArrayFromCache("gamma_s");
+
+        final INDArray totalPsi = Sigma_st.addColumnVector(gamma_s).addi(psi);
+        final INDArray totalMaskedPsiInverse = M_st.div(totalPsi);
+        final INDArray logTotalPsi = Transforms.log(totalPsi);
+
+        return M_st.mul(logTotalPsi).addi(B_st.mul(totalMaskedPsiInverse)).muli(-0.5).sumNumber().doubleValue();
+    }
+
+    /**
      * Solve the M-step equation for $\Psi_t$ by Newton iterations
      * @return
      */
     public CoverageModelEMComputeBlockNDArray updateTargetUnexplainedVarianceTargetResolved(final int maxIters,
                                                                                             final double psiUpperLimit,
-                                                                                            final double psiMinStartingPoint,
-                                                                                            final AbstractUnivariateSolver solver) {
+                                                                                            final double absTol,
+                                                                                            final double relTol,
+                                                                                            final int numBisections,
+                                                                                            final int depth) {
         /* fetch the required caches */
         final INDArray Psi_t = getINDArrayFromCache("Psi_t");
         final INDArray M_st = getINDArrayFromCache("M_st");
@@ -477,14 +515,17 @@ public class CoverageModelEMComputeBlockNDArray {
         final List<ImmutablePair<Double, Integer>> res = IntStream.range(0, numTargets).parallel()
                 .mapToObj(ti -> {
                     final UnivariateFunction objFunc = createPsiSolverObjectiveFunction(ti, M_st, Sigma_st, gamma_s, B_st);
+                    final UnivariateFunction meritFunc = createPsiSolverMeritFunction(ti, M_st, Sigma_st, gamma_s, B_st);
+                    /* TODO */
+                    final RobustBrentSolver solver = new RobustBrentSolver(relTol, absTol, 1e-15);
                     double newPsi;
                     try {
-                        newPsi = solver.solve(maxIters, objFunc, psiLowerBound, psiUpperLimit,
-                                FastMath.max(psiLowerBound + psiMinStartingPoint, Psi_t.getDouble(ti)));
-                        if (calculatePsiCurvature(ti, newPsi, M_st, Sigma_st, gamma_s, B_st) > 0) {
-                            /* we have landed on a local maximum -- reject */
-                            newPsi = Psi_t.getDouble(ti);
-                        }
+                        newPsi = solver.solve(maxIters, objFunc, meritFunc, null, psiLowerBound, psiUpperLimit,
+                                numBisections, depth);
+//                        if (calculatePsiCurvature(ti, newPsi, M_st, Sigma_st, gamma_s, B_st) > 0) {
+//                            /* we have landed on a local maximum -- reject */
+//                            newPsi = Psi_t.getDouble(ti);
+//                        }
                     } catch (NoBracketingException | TooManyEvaluationsException e) {
                         /* if a solution can not be found, set Psi to its previous value */
                         newPsi = Psi_t.getDouble(ti);
@@ -492,8 +533,6 @@ public class CoverageModelEMComputeBlockNDArray {
                     return new ImmutablePair<>(newPsi, solver.getEvaluations());
                 })
                 .collect(Collectors.toList());
-
-        System.out.println(res.stream().map(p -> Integer.toString(p.right)).collect(Collectors.joining(", ")));
 
         final INDArray newPsi_t = Nd4j.create(res.stream().mapToDouble(p -> p.left).toArray(), Psi_t.shape());
         final int maxIterations = Collections.max(res.stream().mapToInt(p -> p.right).boxed().collect(Collectors.toList()));

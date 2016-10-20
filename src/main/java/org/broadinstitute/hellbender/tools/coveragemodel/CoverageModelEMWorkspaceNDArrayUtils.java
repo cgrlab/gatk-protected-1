@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.coveragemodel;
 
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.math3.linear.*;
 import org.apache.commons.math3.util.Precision;
 import org.apache.logging.log4j.Logger;
@@ -140,7 +141,7 @@ public class CoverageModelEMWorkspaceNDArrayUtils {
      * @param logger a logger instance
      * @return [U]
      */
-    public static RealMatrix getOrthogonalizerAndSorterTransformation(@Nonnull final RealMatrix matrix,
+    public static ImmutablePair<double[], RealMatrix> getOrthogonalizerAndSorterTransformation(@Nonnull final RealMatrix matrix,
                                                                       final boolean symmetrize,
                                                                       @Nonnull final Logger logger) {
         if (matrix.getRowDimension() != matrix.getColumnDimension()) {
@@ -158,7 +159,10 @@ public class CoverageModelEMWorkspaceNDArrayUtils {
         } else {
             finalMatrix = matrix;
         }
-        return new EigenDecomposition(finalMatrix).getVT();
+        final EigenDecomposition decomposer = new EigenDecomposition(finalMatrix);
+        final double[] eigs = decomposer.getRealEigenvalues();
+        final RealMatrix VT = decomposer.getVT();
+        return ImmutablePair.of(eigs, VT);
     }
 
     /**
@@ -170,11 +174,13 @@ public class CoverageModelEMWorkspaceNDArrayUtils {
      * @param logger a logger instance
      * @return an INDArray
      */
-    public static INDArray getOrthogonalizerAndSorterTransformation(@Nonnull final INDArray matrix,
-                                                                    final boolean symmetrize,
-                                                                    @Nonnull final Logger logger) {
-        return convertApacheMatrixToINDArray(getOrthogonalizerAndSorterTransformation(
-                convertINDArrayToApacheMatrix(matrix), symmetrize, logger));
+    public static ImmutablePair<INDArray, INDArray> getOrthogonalizerAndSorterTransformation(@Nonnull final INDArray matrix,
+                                                                                             final boolean symmetrize,
+                                                                                             @Nonnull final Logger logger) {
+        final ImmutablePair<double[], RealMatrix> out = getOrthogonalizerAndSorterTransformation(
+                convertINDArrayToApacheMatrix(matrix), symmetrize, logger);
+        return ImmutablePair.of(Nd4j.create(out.left, new int[] {1, matrix.shape()[0]}),
+                convertApacheMatrixToINDArray(out.right));
     }
 
     public static boolean hasBadValues(final INDArray arr) {

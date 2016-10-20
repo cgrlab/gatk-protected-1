@@ -332,7 +332,7 @@ public abstract class CoverageModelEMAlgorithm<S> {
 
             if (params.isModelCheckpointingEnabled() && iterInfo.iter % params.getModelCheckpointingInterval() == 0) {
                 final String posteriorOutputAbsolutePath = new File(outputAbsolutePath,
-                        String.format("%s_iter_%d", POSTERIOR_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
+                        String.format("%d_iter_%d", POSTERIOR_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
                 /* the following will automatically create the directory if it doesn't exist */
                 savePosteriors(posteriorOutputAbsolutePath, PosteriorVerbosityLevel.BASIC);
             }

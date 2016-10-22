@@ -76,25 +76,22 @@ public class CoverageModelEMParams {
     public static final String NUM_LATENTS_SHORT_NAME = "NL";
     public static final String NUM_LATENTS_LONG_NAME = "numLatents";
 
+
+
+
+
+
     public static final PsiSolverMode DEFAULT_PSI_SOLVER_MODE = PsiSolverMode.PSI_TARGET_RESOLVED;
     public static final String PSI_SOLVER_MODE_SHORT_NAME = "PSM";
     public static final String PSI_SOLVER_MODE_LONG_NAME = "psiSolverMode";
 
-    public static final UnivariateSolverType DEFAULT_PSI_SOLVER_TYPE = UnivariateSolverType.BRENT;
-    public static final String PSI_SOLVER_TYPE_SHORT_NAME = "PST";
-    public static final String PSI_SOLVER_TYPE_LONG_NAME = "psiSolverType";
-
-    public static final boolean DEFAULT_ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED = false;
+    public static final boolean DEFAULT_ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED = true;
     public static final String ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED_SHORT_NAME = "APSMS";
     public static final String ADAPTIVE_PSI_SOLVER_MODE_SWITCHING_ENABLED_LONG_NAME = "adaptivePsiSolverModeSwitching";
 
     public static final double DEFAULT_PSI_UPPER_LIMIT = 1.0;
     public static final String PSI_UPPER_LIMIT_SHORT_NAME = "PUL";
     public static final String PSI_UPPER_LIMIT_LONG_NAME = "psiUpperLimit";
-
-    public static final double DEFAULT_PSI_MIN_STARTING_POINT = 1e-8;
-    public static final String PSI_MIN_STARTING_POINT_SHORT_NAME = "PMSP";
-    public static final String PSI_MIN_STARTING_POINT_LONG_NAME = "psiMinimumStartingPoint";
 
     public static final int DEFAULT_MAX_PSI_ITERATIONS = 200;
     public static final String MAX_PSI_ITERATIONS_SHORT_NAME = "MPI";
@@ -107,6 +104,16 @@ public class CoverageModelEMParams {
     public static final double DEFAULT_PSI_REL_TOL = 1e-6;
     public static final String PSI_REL_TOL_SHORT_NAME = "PRT";
     public static final String PSI_REL_TOL_LONG_NAME = "psiRelativeTolerance";
+
+    public static final int DEFAULT_PSI_SOLVER_NUM_BISECTIONS = 10;
+    public static final String PSI_SOLVER_NUM_BISECTIONS_SHORT_NAME = "PSNB";
+    public static final String PSI_SOLVER_NUM_BISECTIONS_LONG_NAME = "psiSolverNumBisections";
+
+    public static final int DEFAULT_PSI_SOLVER_REFINEMENT_DEPTH = 3;
+    public static final String PSI_SOLVER_REFINEMENT_DEPTH_SHORT_NAME = "SSRD";
+    public static final String PSI_SOLVER_REFINEMENT_DEPTH_LONG_NAME = "psiSolverRefinementDepth";
+
+
 
 
     public static final WSolverType DEFAULT_W_SOLVER_TYPE = WSolverType.W_SOLVER_SPARK;
@@ -134,21 +141,16 @@ public class CoverageModelEMParams {
     public static final String W_REL_TOL_LONG_NAME = "wRelativeTolerance";
 
 
-    public static final UnivariateSolverType DEFAULT_GAMMA_SOLVER_TYPE = UnivariateSolverType.BRENT;
-    public static final String GAMMA_SOLVER_TYPE_SHORT_NAME = "GST";
-    public static final String GAMMA_SOLVER_TYPE_LONG_NAME = "gammaSolverType";
 
-    public static final double DEFAULT_GAMMA_UPPER_LIMIT = 1.0;
-    public static final String GAMMA_UPPER_LIMIT_SHORT_NAME = "GUL";
-    public static final String GAMMA_UPPER_LIMIT_LONG_NAME = "gammaUpperLimit";
 
-    public static final double DEFAULT_GAMMA_MIN_STARTING_POINT = 1e-8;
-    public static final String GAMMA_MIN_STARTING_POINT_SHORT_NAME = "GMSP";
-    public static final String GAMMA_MIN_STARTING_POINT_LONG_NAME = "gammaMinStartingPoint";
 
     public static final boolean DEFAULT_GAMMA_UPDATE_ENABLED = true;
     public static final String GAMMA_UPDATE_ENABLED_SHORT_NAME = "GU";
     public static final String GAMMA_UPDATE_ENABLED_LONG_NAME = "gammaUpdate";
+
+    public static final double DEFAULT_GAMMA_UPPER_LIMIT = 1.0;
+    public static final String GAMMA_UPPER_LIMIT_SHORT_NAME = "GUL";
+    public static final String GAMMA_UPPER_LIMIT_LONG_NAME = "gammaUpperLimit";
 
     public static final int DEFAULT_MAX_GAMMA_ITERATIONS = 200;
     public static final String MAX_GAMMA_ITERATIONS_SHORT_NAME = "MGI";
@@ -161,6 +163,16 @@ public class CoverageModelEMParams {
     public static final double DEFAULT_GAMMA_REL_TOL = 1e-6;
     public static final String GAMMA_REL_TOL_SHORT_NAME = "GRT";
     public static final String GAMMA_REL_TOL_LONG_NAME = "gammaRelativeTolerance";
+
+    public static final int DEFAULT_GAMMA_SOLVER_NUM_BISECTIONS = 10;
+    public static final String GAMMA_SOLVER_NUM_BISECTIONS_SHORT_NAME = "GSNB";
+    public static final String GAMMA_SOLVER_NUM_BISECTIONS_LONG_NAME = "gammaSolverNumBisections";
+
+    public static final int DEFAULT_GAMMA_SOLVER_REFINEMENT_DEPTH = 3;
+    public static final String GAMMA_SOLVER_REFINEMENT_DEPTH_SHORT_NAME = "GSRD";
+    public static final String GAMMA_SOLVER_REFINEMENT_DEPTH_LONG_NAME = "gammaSolverRefinementDepth";
+
+
 
 
     public static final boolean DEFAULT_FOURIER_REGULARIZATION_ENABLED = false;
@@ -184,13 +196,21 @@ public class CoverageModelEMParams {
     public static final String FOURIER_REGULARIZATION_STRENGTH_LONG_NAME = "fourierRegularizationStrength";
 
 
-    public static final CopyRatioHMMType DEFAULT_CR_HMM_TYPE = CopyRatioHMMType.COPY_RATIO_HMM_SPARK;
-    public static final String CR_HMM_TYPE_SHORT_NAME = "CRHMM";
-    public static final String CR_HMM_TYPE_LONG_NAME = "copyRatioHMMType";
+
 
     public static final boolean DEFAULT_CR_UPDATE_ENABLED = true;
     public static final String CR_UPDATE_ENABLED_SHORT_NAME = "CRU";
     public static final String CR_UPDATE_ENABLED_LONG_NAME = "copyRatioUpdate";
+
+    public static final CopyRatioHMMType DEFAULT_CR_HMM_TYPE = CopyRatioHMMType.COPY_RATIO_HMM_SPARK;
+    public static final String CR_HMM_TYPE_SHORT_NAME = "CRHMM";
+    public static final String CR_HMM_TYPE_LONG_NAME = "copyRatioHMMType";
+
+
+
+    public static final int DEFAULT_NUMBER_OF_TARGET_SPACE_PARTITIONS = 1;
+    public static final String NUMBER_OF_TARGET_SPACE_PARTITIONS_SHORT_NAME = "NTSP";
+    public static final String NUMBER_OF_TARGET_SPACE_PARTITIONS_LONG_NAME = "numTargetSpacePartitions";
 
     public static final int DEFAULT_RDD_CHECKPOINTING_INTERVAL = 10;
     public static final String RDD_CHECKPOINTING_INTERVAL_SHORT_NAME = "RDDCPI";
@@ -203,6 +223,9 @@ public class CoverageModelEMParams {
     public static final String DEFAULT_RDD_CHECKPOINTING_PATH = "/dev/null";
     public static final String RDD_CHECKPOINTING_PATH_SHORT_NAME = "RDDCPP";
     public static final String RDD_CHECKPOINTING_PATH_LONG_NAME = "rddCheckpointingPath";
+
+
+
 
     public static final int DEFAULT_MODEL_CHECKPOINTING_INTERVAL = 1;
     public static final String MODEL_CHECKPOINTING_INTERVAL_SHORT_NAME = "MCPI";
@@ -220,10 +243,6 @@ public class CoverageModelEMParams {
     public static final String EXTENDED_POSTERIOR_OUTPUT_ENABLED_SHORT_NAME = "XPO";
     public static final String EXTENDED_POSTERIOR_OUTPUT_ENABLED_LONG_NAME = "extendedPosteriorOutputEnabled";
 
-    public static final int DEFAULT_NUMBER_OF_TARGET_SPACE_PARTITIONS = 1;
-    public static final String NUMBER_OF_TARGET_SPACE_PARTITIONS_SHORT_NAME = "NTSP";
-    public static final String NUMBER_OF_TARGET_SPACE_PARTITIONS_LONG_NAME = "numTargetSpacePartitions";
-
     @Advanced
     @Argument(
             doc = "Psi upper limit",
@@ -232,15 +251,6 @@ public class CoverageModelEMParams {
             optional = true
     )
     protected double psiUpperLimit = DEFAULT_PSI_UPPER_LIMIT;
-
-    @Advanced
-    @Argument(
-            doc = "Psi minimum starting point",
-            shortName = PSI_MIN_STARTING_POINT_SHORT_NAME,
-            fullName = PSI_MIN_STARTING_POINT_LONG_NAME,
-            optional = true
-    )
-    protected double psiMinStartingPoint = DEFAULT_PSI_MIN_STARTING_POINT;
 
     @Advanced
     @Argument(
@@ -253,12 +263,40 @@ public class CoverageModelEMParams {
 
     @Advanced
     @Argument(
-            doc = "Gamma minimum starting point",
-            shortName = GAMMA_MIN_STARTING_POINT_SHORT_NAME,
-            fullName = GAMMA_MIN_STARTING_POINT_LONG_NAME,
+            doc = "Gamma solver number of bisections",
+            shortName = GAMMA_SOLVER_NUM_BISECTIONS_SHORT_NAME,
+            fullName = GAMMA_SOLVER_NUM_BISECTIONS_LONG_NAME,
             optional = true
     )
-    protected double gammaMinStartingPoint = DEFAULT_GAMMA_MIN_STARTING_POINT;
+    protected int gammaSolverNumBisections = DEFAULT_GAMMA_SOLVER_NUM_BISECTIONS;
+
+    @Advanced
+    @Argument(
+            doc = "Psi solver number of bisections",
+            shortName = PSI_SOLVER_NUM_BISECTIONS_SHORT_NAME,
+            fullName = PSI_SOLVER_NUM_BISECTIONS_LONG_NAME,
+            optional = true
+    )
+    protected int psiSolverNumBisections = DEFAULT_PSI_SOLVER_NUM_BISECTIONS;
+
+    @Advanced
+    @Argument(
+            doc = "Gamma solver grid refinement depth",
+            shortName = GAMMA_SOLVER_REFINEMENT_DEPTH_SHORT_NAME,
+            fullName = GAMMA_SOLVER_REFINEMENT_DEPTH_LONG_NAME,
+            optional = true
+    )
+    protected int gammaSolverRefinementDepth = DEFAULT_GAMMA_SOLVER_REFINEMENT_DEPTH;
+
+    @Advanced
+    @Argument(
+            doc = "Psi solver grid refinement depth",
+            shortName = PSI_SOLVER_REFINEMENT_DEPTH_SHORT_NAME,
+            fullName = PSI_SOLVER_REFINEMENT_DEPTH_LONG_NAME,
+            optional = true
+    )
+    protected int psiSolverRefinementDepth = DEFAULT_PSI_SOLVER_REFINEMENT_DEPTH;
+
 
     @Advanced
     @Argument(
@@ -497,23 +535,6 @@ public class CoverageModelEMParams {
     )
     protected SparkCommunicationPolicy principalMapSparkCommunicationPolicy = DEFAULT_W_COMMUNICATION_POLICY;
 
-    @Advanced
-    @Argument(
-            doc = "Psi solver type",
-            shortName = PSI_SOLVER_TYPE_SHORT_NAME,
-            fullName = PSI_SOLVER_TYPE_LONG_NAME,
-            optional = true
-    )
-    protected UnivariateSolverType psiSolverType = DEFAULT_PSI_SOLVER_TYPE;
-
-    @Advanced
-    @Argument(
-            doc = "Gamma solver type",
-            shortName = GAMMA_SOLVER_TYPE_SHORT_NAME,
-            fullName = GAMMA_SOLVER_TYPE_LONG_NAME,
-            optional = true
-    )
-    protected UnivariateSolverType gammaSolverType = DEFAULT_GAMMA_SOLVER_TYPE;
 
     @Advanced
     @Argument(
@@ -899,14 +920,6 @@ public class CoverageModelEMParams {
         return this;
     }
 
-    public UnivariateSolverType getPsiSolverType() {
-        return psiSolverType;
-    }
-
-    public UnivariateSolverType getGammaSolverType() {
-        return gammaSolverType;
-    }
-
     public boolean gammaUpdateEnabled() {
         return gammaUpdateEnabled;
     }
@@ -958,15 +971,6 @@ public class CoverageModelEMParams {
         return psiUpperLimit;
     }
 
-    public CoverageModelEMParams setPsiMinimumStartingPoint(final double psiMinStartingPoint) {
-        this.psiMinStartingPoint = ParamUtils.isPositive(psiMinStartingPoint, "Psi min starting point must be positive");
-        return this;
-    }
-
-    public double getPsiMinimumStartingPoint() {
-        return psiMinStartingPoint;
-    }
-
     public CoverageModelEMParams setGammaUpperLimit(final double gammaUpperLimit) {
         this.gammaUpperLimit = ParamUtils.isPositive(gammaUpperLimit, "Gamma upper limit must be positive");
         return this;
@@ -976,14 +980,11 @@ public class CoverageModelEMParams {
         return gammaUpperLimit;
     }
 
-    public CoverageModelEMParams setGammaMinimumStartingPoint(final double gammaMinStartingPoint) {
-        this.gammaMinStartingPoint = ParamUtils.isPositive(gammaMinStartingPoint, "Gamma min starting point must be positive");
-        return this;
-    }
 
-    public double getGammaMinimumStartingPoint() {
-        return gammaMinStartingPoint;
-    }
+
+
+
+
 
     public CoverageModelEMParams enableModelCheckpointing() {
         modelCheckpointingEnabled = true;
@@ -1041,6 +1042,42 @@ public class CoverageModelEMParams {
         return this;
     }
 
+    public int getGammaSolverRefinementDepth() {
+        return gammaSolverRefinementDepth;
+    }
+
+    public int getGammaSolverNumBisections() {
+        return gammaSolverNumBisections;
+    }
+
+    public int getPsiSolverRefinementDepth() {
+        return psiSolverRefinementDepth;
+    }
+
+    public int getPsiSolverNumBisections() {
+        return psiSolverNumBisections;
+    }
+
+    public CoverageModelEMParams setGammaSolverNumBisections(final int gammaSolverNumBisections) {
+        this.gammaSolverNumBisections = gammaSolverNumBisections;
+        return this;
+    }
+
+    public CoverageModelEMParams setGammaSolverRefinementDepth(final int gammaSolverRefinementDepth) {
+        this.gammaSolverRefinementDepth = gammaSolverRefinementDepth;
+        return this;
+    }
+
+    public CoverageModelEMParams setPsiSolverNumBisections(final int psiSolverNumBisections) {
+        this.psiSolverNumBisections = psiSolverNumBisections;
+        return this;
+    }
+
+    public CoverageModelEMParams setPsiSolverRefinementDepth(final int psiSolverRefinementDepth) {
+        this.psiSolverRefinementDepth = psiSolverRefinementDepth;
+        return this;
+    }
+    
     /**
      * Validate parameters TODO
      */

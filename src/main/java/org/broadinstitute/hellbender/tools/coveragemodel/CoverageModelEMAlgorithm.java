@@ -102,7 +102,7 @@ public abstract class CoverageModelEMAlgorithm<S> {
         showIterationInfo(iterInfo.iter, name, iterInfo.logLikelihood, iterInfo.errorNorm, misc);
     }
 
-    public void runExpectationMaximization() {
+    public void runExpectationMaximization(final boolean warmupWithPCA) {
         if (params.adaptivePsiSolverModeSwitchingEnabled()) {
             /* if copy ratio posterior calling is enabled, the first few iterations need to be robust */
             if (params.adaptivePsiSolverModeSwitchingEnabled() &&
@@ -123,6 +123,32 @@ public abstract class CoverageModelEMAlgorithm<S> {
         boolean updateCopyRatioPosteriors = false;
         boolean paramEstimationConverged = false;
         boolean performMStep = true;
+
+//        if (warmupWithPCA) {
+//            final double oldMeanFieldAdmixingRatio = params.getMeanFieldAdmixingRatio();
+//            params.setMeanFieldAdmixingRatio(1.0);
+//            logger.info("Initializing with PCA iterations ...");
+//
+//            double warmupPrevLogLikelihood = Double.NEGATIVE_INFINITY;
+//            double warmupLatestLogLikelihood = Double.NEGATIVE_INFINITY;
+//
+//            runRoutine(this::updateReadDepthLatentPosteriorExpectations, s -> "N/A", "E_STEP_D", iterInfo);
+//            runRoutine(() -> updateTargetMeanBias(true), s -> "N/A", "M_STEP_M", iterInfo);
+//            do {
+//                runRoutine(this::updateBiasLatentPosteriorExpectations, s -> "N/A", "E_STEP_Z", iterInfo);
+//                runRoutine(this::updatePrincipalLatentTargetMap, s -> "N/A", "M_STEP_W", iterInfo);
+//                runRoutine(this::updateTargetUnexplainedVariance, s -> "iters: " + s.getInteger("iterations"),
+//                        "M_STEP_PSI", iterInfo);
+//                warmupPrevLogLikelihood = warmupLatestLogLikelihood;
+//                warmupLatestLogLikelihood = iterInfo.logLikelihood;
+//            } while (FastMath.abs(warmupLatestLogLikelihood - warmupPrevLogLikelihood) > 1e-6);
+//
+//            logger.info("Done warming up ...");
+//
+//            /* back to old admixing ratio */
+//            params.setMeanFieldAdmixingRatio(oldMeanFieldAdmixingRatio);
+//        }
+
 
         while (iterInfo.iter < params.getMaxEMIterations()) {
 
@@ -248,6 +274,8 @@ public abstract class CoverageModelEMAlgorithm<S> {
 
             iterInfo.increaseIterationCount();
 
+            finalizeIteration();
+
             if (params.isModelCheckpointingEnabled() && iterInfo.iter % params.getModelCheckpointingInterval() == 0) {
                 final String modelOutputAbsolutePath = new File(outputAbsolutePath,
                         String.format("%s_iter_%d", MODEL_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
@@ -332,7 +360,7 @@ public abstract class CoverageModelEMAlgorithm<S> {
 
             if (params.isModelCheckpointingEnabled() && iterInfo.iter % params.getModelCheckpointingInterval() == 0) {
                 final String posteriorOutputAbsolutePath = new File(outputAbsolutePath,
-                        String.format("%d_iter_%d", POSTERIOR_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
+                        String.format("%s_iter_%d", POSTERIOR_CHECKPOINT_PATH_PREFIX, iterInfo.iter)).getAbsolutePath();
                 /* the following will automatically create the directory if it doesn't exist */
                 savePosteriors(posteriorOutputAbsolutePath, PosteriorVerbosityLevel.BASIC);
             }
@@ -383,6 +411,8 @@ public abstract class CoverageModelEMAlgorithm<S> {
      * M-step -- Update W
      */
     public abstract SubroutineSignal updatePrincipalLatentTargetMap();
+
+    public abstract void finalizeIteration();
 
     /**
      * Calculate the log likelihood

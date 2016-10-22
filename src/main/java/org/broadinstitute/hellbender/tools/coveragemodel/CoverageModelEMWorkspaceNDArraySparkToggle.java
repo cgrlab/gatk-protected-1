@@ -7,7 +7,6 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.math3.analysis.UnivariateFunction;
-import org.apache.commons.math3.analysis.solvers.AbstractUnivariateSolver;
 import org.apache.commons.math3.exception.NoBracketingException;
 import org.apache.commons.math3.exception.TooManyEvaluationsException;
 import org.apache.commons.math3.util.FastMath;
@@ -31,7 +30,6 @@ import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearS
 import org.broadinstitute.hellbender.tools.coveragemodel.linalg.IterativeLinearSolverNDArray.ExitStatus;
 import org.broadinstitute.hellbender.tools.coveragemodel.math.RobustBrentSolver;
 import org.broadinstitute.hellbender.tools.coveragemodel.math.SynchronizedUnivariateSolver;
-import org.broadinstitute.hellbender.tools.coveragemodel.math.UnivariateSolverDescription;
 import org.broadinstitute.hellbender.tools.coveragemodel.nd4jutils.Nd4jIOUtils;
 import org.broadinstitute.hellbender.tools.exome.*;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
@@ -504,7 +502,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         sampleBiasLatentPosteriorSecondMoments.assign(newSampleBiasLatentPosteriorSecondMomentsAdmixed);
 
         /* broadcast the latent posterior expectations */
-        pushToWorkers(ImmutablePair.of(newSampleBiasLatentPosteriorFirstMoments, newSampleBiasLatentPosteriorSecondMoments),
+        pushToWorkers(ImmutablePair.of(newSampleBiasLatentPosteriorFirstMomentsAdmixed, newSampleBiasLatentPosteriorSecondMomentsAdmixed),
                 (dat, cb) -> cb.cloneWithUpdatedPrimitive("z_sl", dat.left)
                         .cloneWithUpdatedPrimitive("zz_sll", dat.right));
 
@@ -631,11 +629,11 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
 //        final SynchronizedUnivariateSolver syncSolver = new SynchronizedUnivariateSolver(objFunc,
 //                params.getGammaSolverType().getSolverFactory(), numSamples);
         final SynchronizedUnivariateSolver syncSolver = new SynchronizedUnivariateSolver(objFunc,
-                numSamples, RobustBrentSolver.MeritPolicy.LARGEST_ROOT, 10, 2);
+                numSamples, RobustBrentSolver.MeritPolicy.LARGEST_ROOT, params.getGammaSolverNumBisections(),
+                params.getGammaSolverRefinementDepth());
         IntStream.range(0, numSamples)
                 .forEach(si -> {
-                    final double x0 = FastMath.max(gammaLowerLimit + params.getGammaMinimumStartingPoint(),
-                            sampleUnexplainedVariance.getDouble(si));
+                    final double x0 = 0.5 * (gammaLowerLimit + params.getGammaUpperLimit());
                     syncSolver.add(si, gammaLowerLimit, params.getGammaUpperLimit(), x0,
                             params.getGammaAbsoluteTolerance(), params.getGammaRelativeTolerance(),
                             params.getGammaMaximumIterations());
@@ -1048,11 +1046,12 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
      */
     @UpdatesRDD @CachesRDD
     public SubroutineSignal updateTargetUnexplainedVariance() {
-        final int maxIters = params.getPsiMaxIterations();
-        final double absTol = params.getPsiAbsoluteTolerance();
-        final double relTol = params.getPsiRelativeTolerance();
+        final int psiMaxInterations = params.getPsiMaxIterations();
+        final double psiAbsoluteTolerance = params.getPsiAbsoluteTolerance();
+        final double psiRelativeTolerance = params.getPsiRelativeTolerance();
         final double psiUpperLimit = params.getPsiUpperLimit();
-        final double psiMinStartingPoint = params.getPsiMinimumStartingPoint();
+        final int psiSolverNumBisections = params.getPsiSolverNumBisections();
+        final int psiSolverRefinementDepth = params.getPsiSolverRefinementDepth();
 
         logger.debug("Psi solver type: " + params.getPsiSolverMode().name());
         switch (params.getPsiSolverMode()) {
@@ -1060,8 +1059,9 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
 //                final AbstractUnivariateSolver solver = params.getPsiSolverType().getSolverFactory().apply(
 //                        new UnivariateSolverDescription(absTol, relTol, DEFAULT_FUNCTION_EVALUATION_ACCURACY));
                 mapWorkers(cb -> cb.cloneWithUpdatedCachesByTag("M_STEP_PSI")
-                        .updateTargetUnexplainedVarianceTargetResolved(maxIters, psiUpperLimit, absTol, relTol,
-                                10, 2));
+                        .updateTargetUnexplainedVarianceTargetResolved(psiMaxInterations, psiUpperLimit, psiAbsoluteTolerance,
+                                psiRelativeTolerance,
+                                psiSolverNumBisections, psiSolverRefinementDepth));
                 break;
 
             case PSI_ISOTROPIC: /* done on the driver node */
@@ -1113,7 +1113,8 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
         double newIsotropicPsi;
         try {
             newIsotropicPsi = solver.solve(params.getPsiMaxIterations(), objFunc, meritFunc, null,
-                    psiLowerBound, params.getPsiUpperLimit(), 10, 2);
+                    psiLowerBound, params.getPsiUpperLimit(), params.getPsiSolverNumBisections(),
+                    params.getPsiSolverRefinementDepth());
         } catch (NoBracketingException e) {
             logger.warn("Root of M-step optimality equation for Psi could be bracketed.");
             newIsotropicPsi = oldIsotropicPsi;
@@ -1331,7 +1332,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
                             .mmul(U.transpose()));
         });
         principalComponentsNorm2.assign(eigs);
-        System.out.println(eigs);
+//        System.out.println(eigs);
     }
 
     /**
@@ -1694,10 +1695,13 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
     private Stream<LinearSpaceBlock> targetBlockStream() { return targetBlocks.stream(); }
 
 
-
-
-
-
+    @EvaluatesRDD
+    public void performGarbageCollection() {
+        System.gc();
+        if (sparkContextIsAvailable) {
+            computeRDD.values().foreach(CoverageModelEMComputeBlockNDArray::performGarbageCollection);
+        }
+    }
 
 
     private INDArray fetchTargetMeanBias() {

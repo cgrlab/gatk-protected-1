@@ -97,7 +97,7 @@ public class CoverageModelEMAlgorithmUnitTest extends BaseTest {
                 sexGenotypeData, copyNumberPosteriorCalculator, params, null, null);
         algo = new CoverageModelEMAlgorithmNDArraySparkToggle<>(params,
                 "/Users/mehrtash/Data/Genome/PPCA/out/blah", CopyNumberTriState.NEUTRAL, ws);
-        algo.runExpectationMaximization();
+        algo.runExpectationMaximization(true);
         ws.saveModel("/Users/mehrtash/Data/Genome/PPCA/out/blah/model_final");
         ws.savePosteriors(CopyNumberTriState.NEUTRAL, "/Users/mehrtash/Data/Genome/PPCA/out/blah/posteriors_final",
                 PosteriorVerbosityLevel.FULL, null);

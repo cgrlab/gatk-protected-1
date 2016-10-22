@@ -10,8 +10,7 @@ import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGrou
 import org.broadinstitute.hellbender.engine.spark.SparkContextFactory;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.coveragemodel.interfaces.CopyRatioPosteriorCalculator;
-import org.broadinstitute.hellbender.tools.exome.ReadCountCollection;
-import org.broadinstitute.hellbender.tools.exome.ReadCountCollectionUtils;
+import org.broadinstitute.hellbender.tools.exome.*;
 import org.broadinstitute.hellbender.tools.exome.germlinehmm.CopyNumberTriState;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.ContigGermlinePloidyAnnotationTableReader;
 import org.broadinstitute.hellbender.tools.exome.sexgenotyper.GermlinePloidyAnnotatedTargetCollection;
@@ -33,6 +32,11 @@ import java.util.Map;
 )
 public final class CoverageModellerSparkToggle extends SparkToggleCommandLineProgram {
 
+    private enum JobType {
+        LEARN_AND_CALL,
+        CALL_ONLY
+    }
+
     private static final long serialVersionUID = 7864459447058892367L;
 
     private final Logger logger = LogManager.getLogger(CoverageModellerSparkToggle.class);
@@ -45,9 +49,6 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
     private static final String SAMPLE_SEX_GENOTYPE_TABLE_LONG_NAME = "sexGenotypeTable";
     private static final String SAMPLE_SEX_GENOTYPE_TABLE_SHORT_NAME = "gen";
 
-    private static final String TARGET_SPACE_PARTITIONS_LONG_NAME = "targetSpacePartitions";
-    private static final String TARGET_SPACE_PARTITIONS_SHORT_NAME = "partitions";
-
     public static final String EVENT_START_PROBABILITY_LONG_NAME = "eventStartProbability";
     public static final String EVENT_START_PROBABILITY_SHORT_NAME = "eventProb";
 
@@ -59,6 +60,9 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
 
     public static final String MODEL_PATH_LONG_NAME = "modelPath";
     public static final String MODEL_PATH_SHORT_NAME = "model";
+
+    public static final String JOB_TYPE_LONG_NAME = "jobType";
+    public static final String JOB_TYPE_SHORT_NAME = "JT";
 
     @Argument(
             doc = "Combined read count collection URI",
@@ -106,6 +110,14 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
     protected String outputPath;
 
     @Argument(
+            doc = "Job type",
+            fullName = JOB_TYPE_LONG_NAME,
+            shortName = JOB_TYPE_SHORT_NAME,
+            optional = false
+    )
+    protected JobType jobType;
+
+    @Argument(
             doc = "Input model path",
             fullName = MODEL_PATH_LONG_NAME,
             shortName = MODEL_PATH_SHORT_NAME,
@@ -115,6 +127,9 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
 
     @ArgumentCollection
     protected final CoverageModelEMParams params = new CoverageModelEMParams();
+
+    @ArgumentCollection
+    protected final TargetArgumentCollection optionalTargets = new TargetArgumentCollection();
 
     /* Use custom Nd4j Kryo serializer */
     private static final Map<String, String> nd4jSparkProperties = ImmutableMap.<String,String>builder()
@@ -151,10 +166,19 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
 
     @Override
     protected void runPipeline(JavaSparkContext ctx) {
+        final TargetCollection<Target> optionalTargetsCollections = optionalTargets.readTargetCollection(true);
+        if (optionalTargetsCollections == null) {
+            logger.info("No target file was provided; inferring targets from the read count collection");
+        }
+
         logger.info("Parsing the read counts table...");
         final ReadCountCollection readCounts;
         try (final Reader readCountsReader = getReaderFromURI(readCountsURI)) {
-            readCounts = ReadCountCollectionUtils.parse(readCountsReader, readCountsURI);
+            if (optionalTargetsCollections == null) {
+                readCounts = ReadCountCollectionUtils.parse(readCountsReader, readCountsURI);
+            } else {
+                readCounts = ReadCountCollectionUtils.parse(readCountsReader, readCountsURI, optionalTargetsCollections, true);
+            }
         } catch (final IOException ex) {
             ex.printStackTrace();
             throw new UserException.CouldNotReadInputFile("Could not parse the read count collection");
@@ -201,17 +225,21 @@ public final class CoverageModellerSparkToggle extends SparkToggleCommandLinePro
 
         final CoverageModelEMAlgorithmNDArraySparkToggle<CopyNumberTriState> algo =
                 new CoverageModelEMAlgorithmNDArraySparkToggle<>(params,outputPath, CopyNumberTriState.NEUTRAL, ws);
-        if (model == null) {
-            algo.runExpectationMaximization();
-            logger.info("Saving the model to disk...");
-            ws.saveModel(new File(outputPath, FINAL_MODEL_PATHNAME).getAbsolutePath());
-        } else {
-            algo.runExpectation();
+
+        switch (jobType) {
+            case LEARN_AND_CALL:
+                algo.runExpectationMaximization(model == null);
+                logger.info("Saving the model to disk...");
+                ws.saveModel(new File(outputPath, FINAL_MODEL_PATHNAME).getAbsolutePath());
+                break;
+
+            case CALL_ONLY:
+                algo.runExpectation();
         }
 
         logger.info("Saving posteriors to disk...");
-        ws.savePosteriors(CopyNumberTriState.NEUTRAL,
-                new File(outputPath, "posteriors_final").getAbsolutePath(), PosteriorVerbosityLevel.FULL, this.getCommandLine());
+        ws.savePosteriors(CopyNumberTriState.NEUTRAL, new File(outputPath, "posteriors_final").getAbsolutePath(),
+                PosteriorVerbosityLevel.FULL, this.getCommandLine());
     }
 
     private Reader getReaderFromURI(@Nonnull final String inputURI) throws IOException {

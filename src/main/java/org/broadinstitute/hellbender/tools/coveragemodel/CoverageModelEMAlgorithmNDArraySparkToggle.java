@@ -81,4 +81,9 @@ public final class CoverageModelEMAlgorithmNDArraySparkToggle<S extends AlleleMe
     public void savePosteriors(final String posteriorOutputPath, final PosteriorVerbosityLevel verbosity) {
         ws.savePosteriors(neutralState, posteriorOutputPath, verbosity, null);
     }
+
+    @Override @EvaluatesRDD
+    public void finalizeIteration() {
+        ws.performGarbageCollection();
+    }
 }

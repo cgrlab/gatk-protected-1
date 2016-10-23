@@ -96,7 +96,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
     /**
      *
      */
-    private static final double INITIAL_PRINCIPAL_MAP_DIAGONAL = 1.0;
+    private static final double INITIAL_PRINCIPAL_MAP_DIAGONAL = 10.0;
 
     public static final double DEFAULT_FUNCTION_EVALUATION_ACCURACY = 1e-15;
 

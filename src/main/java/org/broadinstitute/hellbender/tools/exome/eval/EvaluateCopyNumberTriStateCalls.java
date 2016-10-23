@@ -399,7 +399,11 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
         if (vec.getTruthAlleleNumber() > 0 && filterArguments.maximumTruthEventFrequency < 1.0 - vec.getTruthAlleleFrequency(CopyNumberTriStateAllele.REF)) {
             filters.add(EvaluationFilter.CommonEvent);
         }
-        if (vec.getTruthAlleleNumber() == 0 && filterArguments.maximumCalledEventFrequency < 1.0 - vec.getCallsAlleleFrequency(CopyNumberTriStateAllele.REF)) {
+        /* if truth AN is 0, it is a call finding; call it a common event only if it is not an unknown positive */
+        if (vec.getTruthAlleleNumber() == 0 &&
+                filterArguments.maximumCalledEventFrequency < 1.0 - vec.getCallsAlleleFrequency(CopyNumberTriStateAllele.REF) &&
+                !(vec.hasAttribute(VariantEvaluationContext.EVALUATION_CLASS_KEY) &&
+                  vec.getAttribute(VariantEvaluationContext.EVALUATION_CLASS_KEY).equals(EvaluationClass.UNKNOWN_POSITIVE.acronym))) {
             filters.add(EvaluationFilter.CommonEvent);
         }
         if (vec.getTruthAlleleNumber() > 0 && filterArguments.minimumTruthSegmentLength > vec.getTargetCount()) {

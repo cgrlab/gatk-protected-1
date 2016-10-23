@@ -399,9 +399,7 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
         if (vec.getTruthAlleleNumber() > 0 && filterArguments.maximumTruthEventFrequency < 1.0 - vec.getTruthAlleleFrequency(CopyNumberTriStateAllele.REF)) {
             filters.add(EvaluationFilter.CommonEvent);
         }
-        if (vec.getTruthAlleleNumber() == 0 &&
-                (vec.getCallsAlleleFrequency(CopyNumberTriStateAllele.DEL) + vec.getCallsAlleleFrequency(CopyNumberTriStateAllele.DUP)) > filterArguments.maximumCalledEventFrequency) {
-            System.out.println(vec.getAlleles().stream().map(Allele::toString).collect(Collectors.joining(",")));
+        if (vec.getTruthAlleleNumber() == 0 && filterArguments.maximumCalledEventFrequency < 1.0 - vec.getCallsAlleleFrequency(CopyNumberTriStateAllele.REF)) {
             filters.add(EvaluationFilter.CommonEvent);
         }
         if (vec.getTruthAlleleNumber() > 0 && filterArguments.minimumTruthSegmentLength > vec.getTargetCount()) {
@@ -457,9 +455,10 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
             } else {
                 builder.filter(EvaluationFilter.PASS);
             }
-        } else { /* NO_CALL */
-            builder.noPL().noGQ().noDP().noAD();
-            builder.alleles(Collections.singletonList(Allele.NO_CALL));
+        } else { /* assume it is neutral */
+            builder.alleles(Collections.singletonList(CopyNumberTriStateAllele.REF));
+            builder.attribute(VariantEvaluationContext.CALL_QUALITY_KEY, 100000);
+            builder.filter(EvaluationFilter.PASS);
         }
         return builder.make();
     }

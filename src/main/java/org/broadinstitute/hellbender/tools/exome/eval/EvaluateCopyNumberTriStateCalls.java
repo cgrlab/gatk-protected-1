@@ -405,6 +405,7 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
                 !(vec.hasAttribute(VariantEvaluationContext.EVALUATION_CLASS_KEY) &&
                   vec.getAttribute(VariantEvaluationContext.EVALUATION_CLASS_KEY).equals(EvaluationClass.UNKNOWN_POSITIVE.acronym))) {
             filters.add(EvaluationFilter.CommonEvent);
+            System.out.println(vec.getCallsAlleleFrequency(CopyNumberTriStateAllele.REF));
         }
         if (vec.getTruthAlleleNumber() > 0 && filterArguments.minimumTruthSegmentLength > vec.getTargetCount()) {
             filters.add(EvaluationFilter.ShortEvent);

@@ -1857,7 +1857,7 @@ public final class CoverageModelEMWorkspaceNDArraySparkToggle<S extends AlleleMe
 
         /* save total noise as a matrix */
         final File totalNoiseFile = new File(outputPath, TOTAL_REMOVED_BIAS_FILENAME);
-        Nd4jIOUtils.writeNDArrayToTextFile(fetchTotalNoise(), totalExplainedVarianceFile,
+        Nd4jIOUtils.writeNDArrayToTextFile(fetchTotalNoise(), totalNoiseFile,
                 sampleNames, targetNames);
     }
 

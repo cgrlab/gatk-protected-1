@@ -456,6 +456,7 @@ public final class EvaluateCopyNumberTriStateCalls extends CommandLineProgram {
                 builder.filter(EvaluationFilter.PASS);
             }
         } else { /* assume it is neutral */
+            /* TODO this is a hack to make CODEX vcf work! */
             builder.alleles(Collections.singletonList(CopyNumberTriStateAllele.REF));
             builder.attribute(VariantEvaluationContext.CALL_QUALITY_KEY, 100000);
             builder.filter(EvaluationFilter.PASS);

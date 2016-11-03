@@ -57,7 +57,7 @@ public class OxoQScorerUnitTest extends BaseTest {
         final String fakeCigarString = CigarUtils.calculateCigar(Arrays.copyOfRange(refBases.getBytes(), 1, refBases.length()-1), readBases.getBytes()).toString();
         GATKRead read = ArtificialReadUtils.createArtificialRead(header, "fake_read", interval.getContig(), interval.getStart() + 1, readBases.getBytes(), fakeReadQuals, fakeCigarString);
 
-        final List<OxoQBinKey> result = OxoQScorer.createOxoQBinKeys(new Tuple2<>(read, mockSource.getReferenceBases((PipelineOptions) null, interval)));
+        final List<OxoQBinKey> result = OxoQScorer.createOxoQBinKeys(new Tuple2<>(read, mockSource.getReferenceBases((PipelineOptions) null, interval)), OxoQScorer.createStringOxoQBinKeyMap());
         Assert.assertNotNull(result);
         Assert.assertEquals(result.size(), read.getLength() - 2 );
         Assert.assertEquals(result.size(), readBases.length() - 2);
@@ -68,17 +68,18 @@ public class OxoQScorerUnitTest extends BaseTest {
     }
 
     /** Just make sure we can create the OxoQKeys from a bam file.  Just checks for crashes and little else. */
-    @Test(timeOut = 25000)
+    @Test(timeOut = 60000)
     public void testBasic() {
         final ReferenceMultiSource initialRef = new ReferenceMultiSource((PipelineOptions) null, testRef, ReferenceWindowFunctions.IDENTITY_FUNCTION);
         final ReferenceMultiSource reference = new ReferenceMultiSource((PipelineOptions) null, testRef, new OxoQScorer.OxoQBinReferenceWindowFunction(initialRef.getReferenceSequenceDictionary(null)));
+
 
         JavaSparkContext ctx = SparkContextFactory.getTestSparkContext();
         ReadsSparkSource src = new ReadsSparkSource(ctx);
         final ReadFilter filter = makeGenomeReadFilter();
         JavaRDD<GATKRead> rawReads = src.getParallelReads(testBam, testRef);
-        final JavaRDD<GATKRead> reads = rawReads.filter(read -> filter.test(read));
-        final double score = OxoQScorer.scoreReads(reads, reference);
+        JavaRDD<GATKRead> reads = rawReads.filter(read -> filter.test(read));
+        final double score = OxoQScorer.scoreReads(reads, reference, ctx);
         Assert.assertTrue(score >= 0);
     }
 

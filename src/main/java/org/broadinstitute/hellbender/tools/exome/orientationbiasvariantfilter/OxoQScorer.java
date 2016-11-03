@@ -4,6 +4,8 @@ import com.google.cloud.dataflow.sdk.repackaged.com.google.common.annotations.Vi
 import htsjdk.samtools.SAMSequenceDictionary;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.broadcast.Broadcast;
 import org.broadinstitute.hellbender.engine.datasources.ReferenceMultiSource;
 import org.broadinstitute.hellbender.engine.spark.BroadcastJoinReadsWithRefBases;
 import org.broadinstitute.hellbender.utils.SerializableFunction;
@@ -13,10 +15,7 @@ import org.broadinstitute.hellbender.utils.read.GATKRead;
 import org.broadinstitute.hellbender.utils.reference.ReferenceBases;
 import scala.Tuple2;
 
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 //TODO: docs
 // Notes:  GATKSparkTool.getReferenceSequenceDictionary()
@@ -39,8 +38,8 @@ public class OxoQScorer {
      *
      * Implemented as a static class rather than an anonymous class or lambda due to serialization issues in spark.
      */
-    public static final class OxoQBinReferenceWindowFunction implements SerializableFunction<GATKRead, SimpleInterval> {
-        private static final long serialVersionUID = 1L;
+    public final static class OxoQBinReferenceWindowFunction implements SerializableFunction<GATKRead, SimpleInterval> {
+        private static final long serialVersionUID = 111L;
 
         SAMSequenceDictionary samSequenceDictionary;
 
@@ -62,7 +61,7 @@ public class OxoQScorer {
      * TODO: Finish docs
      * @param reads
      */
-    public static double scoreReads(final JavaRDD<GATKRead> reads, final ReferenceMultiSource reference) {
+    public static double scoreReads(final JavaRDD<GATKRead> reads, final ReferenceMultiSource reference, final JavaSparkContext ctx) {
 
         // For each read.  Determine if original molecule:
         //  (Orientation==F) xor (Read# == 1)
@@ -73,10 +72,14 @@ public class OxoQScorer {
         //  error of R_o = R_o_alt/(R_o_ref + R_o_alt)
         //
         // This is being represented as a Map
+        final Map<String, OxoQBinKey> stringOxoQBinKeyMap = createStringOxoQBinKeyMap();
 
+
+        // Make the mapping act as a cache and broadcast it, since it will be read only.
+        Broadcast<Map<String, OxoQBinKey>> bStringOxoQBinKeyMap = ctx.broadcast(stringOxoQBinKeyMap);
         JavaPairRDD<GATKRead, ReferenceBases> readsWithReferenceBases = BroadcastJoinReadsWithRefBases.addBases(reference, reads);
         final Map<OxoQBinKey, Long> binCountsByKey = readsWithReferenceBases
-                .flatMap(r -> OxoQScorer.createOxoQBinKeys(r)).countByValue();
+                .flatMap(r -> OxoQScorer.createOxoQBinKeys(r, bStringOxoQBinKeyMap.getValue())).countByValue();
         final Set<OxoQBinKey> allKeys = binCountsByKey.keySet();
         final long fORef = allKeys.stream()
                 .filter(k -> k.isOriginalMolecule() && (k.getArtifactMode().getAlt() == k.getArtifactMode().getRef()))
@@ -98,7 +101,39 @@ public class OxoQScorer {
     }
 
     @VisibleForTesting
-    static List<OxoQBinKey> createOxoQBinKeys(final Tuple2<GATKRead, ReferenceBases> readWithRef) {
+    static Map<String, OxoQBinKey> createStringOxoQBinKeyMap() {
+        // Create a mapping of strings of all possible OxoQBinKeys to a single instance of an OxoQBinKey
+        final Map<String, OxoQBinKey> stringOxoQBinKeyMap = new HashMap<>();
+
+        // Go through all possible combinations of context, artifact mode, and isOriginalMolecule
+        final String preBases = "TCGA";
+        final String postBases = "TCGA";
+        final String artifactRefs = "TCGA";
+        final String artifactAlts = "TCGA";
+        final boolean[] isOriginalMolecules={true, false};
+
+        for (byte preBase: preBases.getBytes()) {
+            for (byte postBase: postBases.getBytes()) {
+                for (byte artifactRef: artifactRefs.getBytes()) {
+                    for (byte artifactAlt: artifactAlts.getBytes()) {
+                        for (boolean isOriginalMolecule: isOriginalMolecules) {
+                            final String k = createOxoQBinCacheKey(preBase, postBase, artifactRef, artifactAlt, isOriginalMolecule);
+                            final OxoQBinKey v = OxoQScorer.createOxoQBinKey(artifactRef, artifactAlt, preBase, postBase, isOriginalMolecule);
+                            stringOxoQBinKeyMap.put(k,v);
+                        }
+                    }
+                }
+            }
+        }
+        return stringOxoQBinKeyMap;
+    }
+
+    private static String createOxoQBinCacheKey(byte preBase, byte postBase, byte artifactRef, byte artifactAlt, boolean isOriginalMolecule) {
+        return String.valueOf(preBase) + String.valueOf(postBase) + String.valueOf(artifactRef) + String.valueOf(artifactAlt) + String.valueOf(isOriginalMolecule);
+    }
+
+    @VisibleForTesting
+    static List<OxoQBinKey> createOxoQBinKeys(final Tuple2<GATKRead, ReferenceBases> readWithRef, final Map<String, OxoQBinKey> stringOxoQBinKeyMap) {
 
         final GATKRead read = readWithRef._1();
 
@@ -138,8 +173,11 @@ public class OxoQScorer {
             }
             final byte modeRef = refBases[indexForRefBase];
             final byte modeAlt = read.getBase(readOffset);
-            result.add(OxoQScorer.createOxoQBinKey(modeRef, modeAlt,
-                    read.getBase(readOffset-1), read.getBase(readOffset+1), isOriginalMolecule));
+            final String k = OxoQScorer.createOxoQBinCacheKey(read.getBase(readOffset - 1), read.getBase(readOffset + 1), modeRef, modeAlt, isOriginalMolecule);
+            final OxoQBinKey v = stringOxoQBinKeyMap.getOrDefault(k, null);
+            if (v != null) {
+                result.add(v);
+            }
         }
 
         return result;

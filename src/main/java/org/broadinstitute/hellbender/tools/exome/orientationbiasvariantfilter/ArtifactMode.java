@@ -1,6 +1,11 @@
 package org.broadinstitute.hellbender.tools.exome.orientationbiasvariantfilter;
 
-public class ArtifactMode {
+import java.io.Serializable;
+
+public class ArtifactMode implements Serializable {
+
+    static final long serialVersionUID = 3373373374112L;
+
     private byte ref;
     private byte alt;
 

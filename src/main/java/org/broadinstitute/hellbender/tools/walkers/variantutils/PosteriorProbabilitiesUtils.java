@@ -29,9 +29,7 @@ public final class PosteriorProbabilitiesUtils {
 
         final Map<Allele,Integer> totalAlleleCounts = new HashMap<>();
         boolean nonSNPprior = false;
-        if (vc1 == null) {
-            throw new IllegalArgumentException("VariantContext vc1 is null");
-        }
+        Utils.nonNull(vc1, "VariantContext vc1 is null");
         final boolean nonSNPeval = !vc1.isSNP();
         final double[] alleleCounts = new double[vc1.getNAlleles()];
         //only use discovered allele count if there are at least 10 samples
@@ -315,10 +313,8 @@ public final class PosteriorProbabilitiesUtils {
         } else if ( integerListContainingVCField instanceof String) {
             mleList = Arrays.asList(Integer.parseInt((String)integerListContainingVCField));
         }
-        if ( mleList == null ) {
-            throw new IllegalArgumentException(String.format("VCF does not have properly formatted " +
-                    GATKVCFConstants.MLE_ALLELE_COUNT_KEY + " or " + VCFConstants.ALLELE_COUNT_KEY));
-        }
+        Utils.nonNull( mleList, () -> String.format("VCF does not have properly formatted %s or %s.",
+                    GATKVCFConstants.MLE_ALLELE_COUNT_KEY, VCFConstants.ALLELE_COUNT_KEY));
 
         final int[] mle = new int[mleList.size()];
 

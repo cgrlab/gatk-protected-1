@@ -283,9 +283,7 @@ public final class AssemblyRegionTrimmer {
             this.maximumSpan = maximumSpan;
             this.extendedSpan = extendedSpan;
 
-            if ( extendedSpan != null && callableSpan != null && ! extendedSpan.contains(callableSpan) ) {
-                throw new IllegalArgumentException("the extended callable span must include the callable span");
-            }
+            Utils.validateArg(extendedSpan == null || callableSpan == null || extendedSpan.contains(callableSpan), "the extended callable span must include the callable span");
         }
 
 

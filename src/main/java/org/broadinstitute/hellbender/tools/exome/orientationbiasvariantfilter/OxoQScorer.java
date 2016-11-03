@@ -74,7 +74,6 @@ public class OxoQScorer {
         // This is being represented as a Map
         final Map<String, OxoQBinKey> stringOxoQBinKeyMap = createStringOxoQBinKeyMap();
 
-
         // Make the mapping act as a cache and broadcast it, since it will be read only.
         Broadcast<Map<String, OxoQBinKey>> bStringOxoQBinKeyMap = ctx.broadcast(stringOxoQBinKeyMap);
         JavaPairRDD<GATKRead, ReferenceBases> readsWithReferenceBases = BroadcastJoinReadsWithRefBases.addBases(reference, reads);

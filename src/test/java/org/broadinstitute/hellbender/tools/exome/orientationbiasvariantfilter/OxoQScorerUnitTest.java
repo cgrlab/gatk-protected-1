@@ -22,6 +22,7 @@ import scala.Tuple2;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 
 import static org.mockito.Matchers.any;
@@ -73,7 +74,6 @@ public class OxoQScorerUnitTest extends BaseTest {
         final ReferenceMultiSource initialRef = new ReferenceMultiSource((PipelineOptions) null, testRef, ReferenceWindowFunctions.IDENTITY_FUNCTION);
         final ReferenceMultiSource reference = new ReferenceMultiSource((PipelineOptions) null, testRef, new OxoQScorer.OxoQBinReferenceWindowFunction(initialRef.getReferenceSequenceDictionary(null)));
 
-
         JavaSparkContext ctx = SparkContextFactory.getTestSparkContext();
         ReadsSparkSource src = new ReadsSparkSource(ctx);
         final ReadFilter filter = makeGenomeReadFilter();
@@ -81,6 +81,41 @@ public class OxoQScorerUnitTest extends BaseTest {
         JavaRDD<GATKRead> reads = rawReads.filter(read -> filter.test(read));
         final double score = OxoQScorer.scoreReads(reads, reference, ctx);
         Assert.assertTrue(score >= 0);
+    }
+
+    @Test(timeOut = 60000)
+    public void testScoreInBasicScenario() throws IOException{
+        final String read1Bases = "CGATAGGT";
+        final String read2Bases = "CGCTAGGT";
+        final String refBases =  "ACGCTACCAA";
+
+        final byte[] fakeReadQuals = new byte[read1Bases.length()];
+        Arrays.fill(fakeReadQuals, (byte) 50);
+
+        SimpleInterval interval = new SimpleInterval("22", 500, 500+refBases.length()-1);
+
+        ReferenceMultiSource mockSource = mock(ReferenceMultiSource.class, withSettings().serializable());
+        when(mockSource.getReferenceBases(any(PipelineOptions.class), any(SimpleInterval.class))).thenReturn(new ReferenceBases(refBases.getBytes(), interval));
+
+        SAMFileHeader header = ArtificialReadUtils.createArtificialSamHeader();
+
+        // fake, but accurate cigar
+        final String fakeCigarString = CigarUtils.calculateCigar(Arrays.copyOfRange(refBases.getBytes(), 1, refBases.length()-1), read1Bases.getBytes()).toString();
+        GATKRead read1 = ArtificialReadUtils.createArtificialRead(header, "fake_read1", interval.getContig(), interval.getStart() + 1, read1Bases.getBytes(), fakeReadQuals, fakeCigarString);
+        GATKRead read2 = ArtificialReadUtils.createArtificialRead(header, "fake_read2", interval.getContig(), interval.getStart() + 1, read2Bases.getBytes(), fakeReadQuals, fakeCigarString);
+        read2.setIsSecondOfPair();
+
+        final List<GATKRead> readsAsList = new LinkedList<>();
+        readsAsList.add(read1);
+        readsAsList.add(read2);
+
+        JavaSparkContext ctx = SparkContextFactory.getTestSparkContext();
+        JavaRDD<GATKRead> reads = ctx.parallelize(readsAsList);
+        final double score = OxoQScorer.scoreReads(reads, mockSource, ctx);
+
+        //TODO: Test a raw score...
+
+
     }
 
     private ReadFilter makeGenomeReadFilter() {

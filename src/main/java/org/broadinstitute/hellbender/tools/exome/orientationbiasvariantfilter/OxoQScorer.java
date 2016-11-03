@@ -108,7 +108,7 @@ public class OxoQScorer {
         List<OxoQBinKey> result = new LinkedList<>();
         final boolean isOriginalMolecule = read.isFirstOfPair() ^ !read.isReverseStrand();
 
-        AlignmentStateMachine genomeIterator = new AlignmentStateMachine(read);
+        final AlignmentStateMachine genomeIterator = new AlignmentStateMachine(read);
         genomeIterator.stepForwardOnGenome();
 
         // Since we need to derive context from the read, we (effectively) skip the first base.
@@ -132,11 +132,19 @@ public class OxoQScorer {
             }
 
             // Corresponding index in the reference bases.
-            int indexForRefBase = genomeIterator.getGenomePosition()-ref.getInterval().getStart();
-            result.add(OxoQScorer.createOxoQBinKey(refBases[indexForRefBase], read.getBase(readOffset),
+            final int indexForRefBase = genomeIterator.getGenomePosition()-ref.getInterval().getStart();
+            if (indexForRefBase >= refBases.length) {
+                break;
+            }
+            final byte modeRef = refBases[indexForRefBase];
+            final byte modeAlt = read.getBase(readOffset);
+            result.add(OxoQScorer.createOxoQBinKey(modeRef, modeAlt,
                     read.getBase(readOffset-1), read.getBase(readOffset+1), isOriginalMolecule));
         }
 
         return result;
     }
+
+    // Do not allow instantiation of this class
+    private OxoQScorer() {};
 }

@@ -29,6 +29,9 @@ import static org.mockito.Mockito.*;
 
 public class OxoQScorerUnitTest extends BaseTest {
 
+    public static final String largeFileAcnvFileTestDir = largeFileTestDir + "/ACNV_pipeline_test_files/";
+    public static final String testBam = largeFileAcnvFileTestDir + "HCC1143-t1-chr20-downsampled.deduplicated.bam";
+    public static final String testRef = largeFileAcnvFileTestDir + "human_g1k_v37.chr-20.truncated.fasta";
 
     /** This is testing a private method, so there is not much error testing, since calling functions will make sure
      * inputs are valid.
@@ -65,17 +68,18 @@ public class OxoQScorerUnitTest extends BaseTest {
     }
 
     /** Just make sure we can create the OxoQKeys from a bam file.  Just checks for crashes and little else. */
-    @Test
+    @Test(timeOut = 25000)
     public void testBasic() {
-        JavaSparkContext ctx = SparkContextFactory.getTestSparkContext();
-        final ReferenceMultiSource initialRef = new ReferenceMultiSource((PipelineOptions) null, b37_reference_20_21, ReferenceWindowFunctions.IDENTITY_FUNCTION);
-        final ReferenceMultiSource reference = new ReferenceMultiSource((PipelineOptions) null, b37_reference_20_21, new OxoQScorer.OxoQBinReferenceWindowFunction(initialRef.getReferenceSequenceDictionary(null)));
+        final ReferenceMultiSource initialRef = new ReferenceMultiSource((PipelineOptions) null, testRef, ReferenceWindowFunctions.IDENTITY_FUNCTION);
+        final ReferenceMultiSource reference = new ReferenceMultiSource((PipelineOptions) null, testRef, new OxoQScorer.OxoQBinReferenceWindowFunction(initialRef.getReferenceSequenceDictionary(null)));
 
+        JavaSparkContext ctx = SparkContextFactory.getTestSparkContext();
         ReadsSparkSource src = new ReadsSparkSource(ctx);
         final ReadFilter filter = makeGenomeReadFilter();
-        JavaRDD<GATKRead> rawReads = src.getParallelReads(NA12878_20_21_WGS_bam, b37_reference_20_21);
+        JavaRDD<GATKRead> rawReads = src.getParallelReads(testBam, testRef);
         final JavaRDD<GATKRead> reads = rawReads.filter(read -> filter.test(read));
-        OxoQScorer.scoreReads(reads, reference);
+        final double score = OxoQScorer.scoreReads(reads, reference);
+        Assert.assertTrue(score >= 0);
     }
 
     private ReadFilter makeGenomeReadFilter() {

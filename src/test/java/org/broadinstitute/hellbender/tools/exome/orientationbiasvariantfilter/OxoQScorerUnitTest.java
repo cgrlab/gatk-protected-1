@@ -2,10 +2,11 @@ package org.broadinstitute.hellbender.tools.exome.orientationbiasvariantfilter;
 
 import com.google.cloud.dataflow.sdk.options.PipelineOptions;
 import htsjdk.samtools.SAMFileHeader;
+import htsjdk.samtools.SAMSequenceDictionary;
+import htsjdk.variant.utils.SAMSequenceDictionaryExtractor;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.broadinstitute.hellbender.engine.datasources.ReferenceMultiSource;
-import org.broadinstitute.hellbender.engine.datasources.ReferenceWindowFunctions;
 import org.broadinstitute.hellbender.engine.filters.ReadFilter;
 import org.broadinstitute.hellbender.engine.filters.ReadFilterLibrary;
 import org.broadinstitute.hellbender.engine.spark.SparkContextFactory;
@@ -20,6 +21,7 @@ import org.testng.Assert;
 import org.testng.annotations.Test;
 import scala.Tuple2;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -71,8 +73,9 @@ public class OxoQScorerUnitTest extends BaseTest {
     /** Just make sure we can create the OxoQKeys from a bam file.  Just checks for crashes and little else. */
     @Test(timeOut = 60000)
     public void testBasic() {
-        final ReferenceMultiSource initialRef = new ReferenceMultiSource((PipelineOptions) null, testRef, ReferenceWindowFunctions.IDENTITY_FUNCTION);
-        final ReferenceMultiSource reference = new ReferenceMultiSource((PipelineOptions) null, testRef, new OxoQScorer.OxoQBinReferenceWindowFunction(initialRef.getReferenceSequenceDictionary(null)));
+
+        final SAMSequenceDictionary samSequenceDictionary = SAMSequenceDictionaryExtractor.extractDictionary(new File(testRef));
+        final ReferenceMultiSource reference = new ReferenceMultiSource((PipelineOptions) null, testRef, new OxoQScorer.OxoQBinReferenceWindowFunction(samSequenceDictionary));
 
         JavaSparkContext ctx = SparkContextFactory.getTestSparkContext();
         ReadsSparkSource src = new ReadsSparkSource(ctx);
@@ -83,38 +86,51 @@ public class OxoQScorerUnitTest extends BaseTest {
         Assert.assertTrue(score >= 0);
     }
 
-    @Test(timeOut = 60000)
+    @Test
     public void testScoreInBasicScenario() throws IOException{
-        final String read1Bases = "CGATAGGT";
-        final String read2Bases = "CGCTAGGT";
-        final String refBases =  "ACGCTACCAA";
+        final String read1Bases = "TTTCAAGA"; // 2 SNP  (error 2/6 )
+        final String read2Bases = "TATCCAAA"; // 1 SNP  (error 1/6 )
+        // FYI ...                ATTTCCAAAC
+        // The reference bases at 20:500000-500009 = "ATTTCCAAACA";
 
         final byte[] fakeReadQuals = new byte[read1Bases.length()];
         Arrays.fill(fakeReadQuals, (byte) 50);
 
-        SimpleInterval interval = new SimpleInterval("22", 500, 500+refBases.length()-1);
+        SimpleInterval interval = new SimpleInterval("20", 500000, 500009);
 
-        ReferenceMultiSource mockSource = mock(ReferenceMultiSource.class, withSettings().serializable());
-        when(mockSource.getReferenceBases(any(PipelineOptions.class), any(SimpleInterval.class))).thenReturn(new ReferenceBases(refBases.getBytes(), interval));
+        final SAMSequenceDictionary samSequenceDictionary = SAMSequenceDictionaryExtractor.extractDictionary(new File(testRef));
+        final ReferenceMultiSource reference = new ReferenceMultiSource((PipelineOptions) null, testRef, new OxoQScorer.OxoQBinReferenceWindowFunction(samSequenceDictionary));
 
         SAMFileHeader header = ArtificialReadUtils.createArtificialSamHeader();
 
+        // In this test, the reference bases are the same for both reads.
+        final byte[] refBases = reference.getReferenceBases(null, interval).getBases();
+
         // fake, but accurate cigar
-        final String fakeCigarString = CigarUtils.calculateCigar(Arrays.copyOfRange(refBases.getBytes(), 1, refBases.length()-1), read1Bases.getBytes()).toString();
-        GATKRead read1 = ArtificialReadUtils.createArtificialRead(header, "fake_read1", interval.getContig(), interval.getStart() + 1, read1Bases.getBytes(), fakeReadQuals, fakeCigarString);
-        GATKRead read2 = ArtificialReadUtils.createArtificialRead(header, "fake_read2", interval.getContig(), interval.getStart() + 1, read2Bases.getBytes(), fakeReadQuals, fakeCigarString);
-        read2.setIsSecondOfPair();
+        final String fakeCigarString1 = CigarUtils.calculateCigar(Arrays.copyOfRange(refBases, 1, refBases.length-1), read1Bases.getBytes()).toString();
+        final String fakeCigarString2 = CigarUtils.calculateCigar(Arrays.copyOfRange(refBases, 1, refBases.length-1), read2Bases.getBytes()).toString();
+        final GATKRead read1 = ArtificialReadUtils.createArtificialRead(header, "fake_read1", interval.getContig(), interval.getStart() + 1, read1Bases.getBytes(), fakeReadQuals, fakeCigarString1);
+        final GATKRead read2 = ArtificialReadUtils.createArtificialRead(header, "fake_read2", interval.getContig(), interval.getStart() + 1, read2Bases.getBytes(), fakeReadQuals, fakeCigarString2);
+        read2.setIsFirstOfPair(); // not original molecule
+        read1.setIsSecondOfPair(); // is original molecule
 
         final List<GATKRead> readsAsList = new LinkedList<>();
         readsAsList.add(read1);
         readsAsList.add(read2);
 
+        // Make sure that we can create keys appropriately...
+        final List<OxoQBinKey> result = OxoQScorer.createOxoQBinKeys(new Tuple2<>(read1, reference.getReferenceBases((PipelineOptions) null, interval)), OxoQScorer.createStringOxoQBinKeyMap());
+        Assert.assertEquals(result.size(), read1Bases.length() - 2);
+        final List<OxoQBinKey> result2 = OxoQScorer.createOxoQBinKeys(new Tuple2<>(read2, reference.getReferenceBases((PipelineOptions) null, interval)), OxoQScorer.createStringOxoQBinKeyMap());
+        Assert.assertEquals(result2.size(), read2Bases.length() - 2);
+
+        // Score away!
         JavaSparkContext ctx = SparkContextFactory.getTestSparkContext();
         JavaRDD<GATKRead> reads = ctx.parallelize(readsAsList);
-        final double score = OxoQScorer.scoreReads(reads, mockSource, ctx);
+        final double score = OxoQScorer.scoreReads(reads, reference, ctx);
 
-        //TODO: Test a raw score...
-
+        // GT from matlab:  -10*log10((2/6) - (1/6))
+        Assert.assertEquals(score, 7.7815, 1e-2);
 
     }
 

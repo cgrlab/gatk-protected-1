@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.exome.orientationbiasvariantfilter;
 
+import com.google.cloud.dataflow.sdk.repackaged.com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.RealMatrix;
@@ -28,7 +29,8 @@ public class OxoQScorer {
      * @param metrics
      * @return
      */
-    public static Map<Pair<Character, Character>, RealMatrix> countOrientationBiasMetricsOverContext(final List<SequencingArtifactMetrics.PreAdapterDetailMetrics> metrics) {
+    @VisibleForTesting
+    static Map<Pair<Character, Character>, RealMatrix> countOrientationBiasMetricsOverContext(final List<SequencingArtifactMetrics.PreAdapterDetailMetrics> metrics) {
         Utils.nonNull(metrics, "Input metrics cannot be null");
 
         // Artifact mode to a matrix
@@ -48,7 +50,7 @@ public class OxoQScorer {
     }
 
     // TODO: docs
-    public static Map<Pair<Character, Character>, Double> scoreOrientationBiasMetrics(final List<SequencingArtifactMetrics.PreAdapterDetailMetrics> metrics) {
+    public static Map<Pair<Character, Character>, Double> scoreOrientationBiasMetricsOverContext(final List<SequencingArtifactMetrics.PreAdapterDetailMetrics> metrics) {
         Utils.nonNull(metrics, "Input metrics cannot be null");
 
         // Artifact mode to a double
@@ -60,8 +62,10 @@ public class OxoQScorer {
             final RealMatrix count = counts.get(artifactMode);
             final double totalBases = count.getEntry(PRO, REF) + count.getEntry(PRO, ALT) +
                     count.getEntry(CON, REF) + count.getEntry(CON, ALT);
-            final double score = -10 * Math.log10(Math.max(count.getEntry(PRO, ALT)/totalBases -
-                    count.getEntry(CON, ALT)/totalBases, Math.pow(10, -10)));
+            final double rawScorePro = count.getEntry(PRO, ALT)/totalBases;
+            final double rawScoreCon = count.getEntry(CON, ALT)/totalBases;
+            final double rawScore = rawScorePro - rawScoreCon;
+            final double score = -10 * Math.log10(Math.max(rawScore, Math.pow(10, -10)));
             result.put(artifactMode, score);
         }
 

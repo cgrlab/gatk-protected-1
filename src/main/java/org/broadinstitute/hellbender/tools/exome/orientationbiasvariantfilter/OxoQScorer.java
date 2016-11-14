@@ -1,182 +1,68 @@
 package org.broadinstitute.hellbender.tools.exome.orientationbiasvariantfilter;
 
-import com.google.cloud.dataflow.sdk.repackaged.com.google.common.annotations.VisibleForTesting;
-import htsjdk.samtools.SAMSequenceDictionary;
-import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.broadcast.Broadcast;
-import org.broadinstitute.hellbender.engine.datasources.ReferenceMultiSource;
-import org.broadinstitute.hellbender.engine.spark.BroadcastJoinReadsWithRefBases;
-import org.broadinstitute.hellbender.utils.SerializableFunction;
-import org.broadinstitute.hellbender.utils.SimpleInterval;
-import org.broadinstitute.hellbender.utils.locusiterator.AlignmentStateMachine;
-import org.broadinstitute.hellbender.utils.read.GATKRead;
-import org.broadinstitute.hellbender.utils.reference.ReferenceBases;
-import scala.Tuple2;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.commons.math3.linear.Array2DRowRealMatrix;
+import org.apache.commons.math3.linear.RealMatrix;
+import org.broadinstitute.hellbender.tools.picard.analysis.artifacts.SequencingArtifactMetrics;
+import org.broadinstitute.hellbender.utils.Utils;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 //TODO: docs
-// Notes:  GATKSparkTool.getReferenceSequenceDictionary()
-//   SparkCommandLineProgram.getAuthenticatedGCSOptions()
-
 public class OxoQScorer {
-    /** This scorer assumes that we are only interested in a context that is symmetric on both sides and a fixed number of bases. */
-    public final static int EXPECTED_CONTEXT_PADDING = 1;
 
-    public static OxoQBinKey createOxoQBinKey(final byte artifactRef, final byte artifactAlt,
-                                   final byte contextPre, final byte contextPost,
-                                   final boolean isOriginalMolecule) {
-        return new OxoQBinKey(new ArtifactMode(artifactRef, artifactAlt),
-                            new Tuple2<>(contextPre, contextPost), isOriginalMolecule);
-    }
+    // rows {PRO, CON} x cols {ref, alt}
+    final static int PRO = 0;
+    final static int CON = 1;
+    final static int REF = 0;
+    final static int ALT = 1;
 
     /**
-     * Reference window function for creating OxoQBinKeys. For each read, returns an interval representing the span of
-     * reference bases matching that read with a padding of one on either end.
+     * Gets error rate collapsed over contexts.
      *
-     * Implemented as a static class rather than an anonymous class or lambda due to serialization issues in spark.
-     */
-    public final static class OxoQBinReferenceWindowFunction implements SerializableFunction<GATKRead, SimpleInterval> {
-        private static final long serialVersionUID = 111L;
-
-        SAMSequenceDictionary samSequenceDictionary;
-
-        public OxoQBinReferenceWindowFunction(final SAMSequenceDictionary samSequenceDictionary) {
-            this.samSequenceDictionary = samSequenceDictionary;
-        }
-
-        @Override
-        public SimpleInterval apply( GATKRead read ) {
-            return new SimpleInterval(read).expandWithinContig(EXPECTED_CONTEXT_PADDING, samSequenceDictionary);
-        }
-    }
-
-
-    /**
-     * Will automatically filter out unmapped reads.
-     *
-     * Reads MUST have unmapped reads removed.
+     * rows {PRO, CON} x cols {ref, alt}
      * TODO: Finish docs
-     * @param reads
+     * TODO: What to do about more than one sample?
+     * @param metrics
+     * @return
      */
-    public static double scoreReads(final JavaRDD<GATKRead> reads, final ReferenceMultiSource reference, final JavaSparkContext ctx) {
+    public static Map<Pair<Character, Character>, RealMatrix> countOrientationBiasMetricsOverContext(final List<SequencingArtifactMetrics.PreAdapterDetailMetrics> metrics) {
+        Utils.nonNull(metrics, "Input metrics cannot be null");
 
-        // For each read.  Determine if original molecule:
-        //  (Orientation==F) xor (Read# == 1)
+        // Artifact mode to a matrix
+        final Map<Pair<Character, Character>, RealMatrix> result = new HashMap<>();
 
-        // Create 2 x 2 matrix isOriginal x ref alt
-        // F_o is "is original molecule"
-        //  error of F_o = F_o_alt/(F_o_ref + F_o_alt)
-        //  error of R_o = R_o_alt/(R_o_ref + R_o_alt)
-        //
-        // This is being represented as a Map
-        final Map<String, OxoQBinKey> stringOxoQBinKeyMap = createStringOxoQBinKeyMap();
-
-        // Make the mapping act as a cache and broadcast it, since it will be read only.
-        Broadcast<Map<String, OxoQBinKey>> bStringOxoQBinKeyMap = ctx.broadcast(stringOxoQBinKeyMap);
-        JavaPairRDD<GATKRead, ReferenceBases> readsWithReferenceBases = BroadcastJoinReadsWithRefBases.addBases(reference, reads);
-        final Map<OxoQBinKey, Long> binCountsByKey = readsWithReferenceBases
-                .flatMap(r -> OxoQScorer.createOxoQBinKeys(r, bStringOxoQBinKeyMap.getValue())).countByValue();
-        final Set<OxoQBinKey> allKeys = binCountsByKey.keySet();
-        final long fORef = allKeys.stream()
-                .filter(k -> k.isOriginalMolecule() && (k.getArtifactMode().getAlt() == k.getArtifactMode().getRef()))
-                .mapToLong(k -> binCountsByKey.get(k)).sum();
-        final long fOAlt = allKeys.stream()
-                .filter(k -> k.isOriginalMolecule() && (k.getArtifactMode().getAlt() != k.getArtifactMode().getRef()))
-                .mapToLong(k -> binCountsByKey.get(k)).sum();
-        final long rORef = allKeys.stream()
-                .filter(k -> !k.isOriginalMolecule() && (k.getArtifactMode().getAlt() == k.getArtifactMode().getRef()))
-                .mapToLong(k -> binCountsByKey.get(k)).sum();
-        final long rOAlt = allKeys.stream()
-                .filter(k -> !k.isOriginalMolecule() && (k.getArtifactMode().getAlt() != k.getArtifactMode().getRef()))
-                .mapToLong(k -> binCountsByKey.get(k)).sum();
-
-        final double errorFO = (double)fOAlt/ (double)(fOAlt + fORef);
-        final double errorRO = (double)rOAlt/ (double)(rOAlt + rORef);
-
-        return -10 * Math.log10(Math.max(errorFO-errorRO, Math.pow(10, -10)));
-    }
-
-    @VisibleForTesting
-    static Map<String, OxoQBinKey> createStringOxoQBinKeyMap() {
-        // Create a mapping of strings of all possible OxoQBinKeys to a single instance of an OxoQBinKey
-        final Map<String, OxoQBinKey> stringOxoQBinKeyMap = new HashMap<>();
-
-        // Go through all possible combinations of context, artifact mode, and isOriginalMolecule
-        final String preBases = "TCGA";
-        final String postBases = "TCGA";
-        final String artifactRefs = "TCGA";
-        final String artifactAlts = "TCGA";
-        final boolean[] isOriginalMolecules={true, false};
-
-        for (byte preBase: preBases.getBytes()) {
-            for (byte postBase: postBases.getBytes()) {
-                for (byte artifactRef: artifactRefs.getBytes()) {
-                    for (byte artifactAlt: artifactAlts.getBytes()) {
-                        for (boolean isOriginalMolecule: isOriginalMolecules) {
-                            final String k = createOxoQBinCacheKey(preBase, postBase, artifactRef, artifactAlt, isOriginalMolecule);
-                            final OxoQBinKey v = OxoQScorer.createOxoQBinKey(artifactRef, artifactAlt, preBase, postBase, isOriginalMolecule);
-                            stringOxoQBinKeyMap.put(k,v);
-                        }
-                    }
-                }
-            }
+        // Collapse over context
+        for (SequencingArtifactMetrics.PreAdapterDetailMetrics metric : metrics) {
+            final Pair<Character, Character> key = Pair.of(metric.REF_BASE, metric.ALT_BASE);
+            result.putIfAbsent(key, new Array2DRowRealMatrix(2, 2));
+            result.get(key).addToEntry(OxoQScorer.PRO, OxoQScorer.ALT, metric.PRO_ALT_BASES);
+            result.get(key).addToEntry(OxoQScorer.CON, OxoQScorer.ALT, metric.CON_ALT_BASES);
+            result.get(key).addToEntry(OxoQScorer.PRO, OxoQScorer.REF, metric.PRO_REF_BASES);
+            result.get(key).addToEntry(OxoQScorer.CON, OxoQScorer.REF, metric.CON_REF_BASES);
         }
-        return stringOxoQBinKeyMap;
+
+        return result;
     }
 
-    private static String createOxoQBinCacheKey(byte preBase, byte postBase, byte artifactRef, byte artifactAlt, boolean isOriginalMolecule) {
-        return String.valueOf(preBase) + String.valueOf(postBase) + String.valueOf(artifactRef) + String.valueOf(artifactAlt) + String.valueOf(isOriginalMolecule);
-    }
+    // TODO: docs
+    public static Map<Pair<Character, Character>, Double> scoreOrientationBiasMetrics(final List<SequencingArtifactMetrics.PreAdapterDetailMetrics> metrics) {
+        Utils.nonNull(metrics, "Input metrics cannot be null");
 
-    @VisibleForTesting
-    static List<OxoQBinKey> createOxoQBinKeys(final Tuple2<GATKRead, ReferenceBases> readWithRef, final Map<String, OxoQBinKey> stringOxoQBinKeyMap) {
+        // Artifact mode to a double
+        final Map<Pair<Character, Character>, Double> result = new HashMap<>();
 
-        final GATKRead read = readWithRef._1();
+        final Map<Pair<Character, Character>, RealMatrix> counts = countOrientationBiasMetricsOverContext(metrics);
 
-        final ReferenceBases ref = readWithRef._2();
-        final byte[] refBases = ref.getBases();
-
-        List<OxoQBinKey> result = new LinkedList<>();
-        final boolean isOriginalMolecule = read.isFirstOfPair() ^ !read.isReverseStrand();
-
-        final AlignmentStateMachine genomeIterator = new AlignmentStateMachine(read);
-        genomeIterator.stepForwardOnGenome();
-
-        // Since we need to derive context from the read, we (effectively) skip the first base.
-        int readOffset = genomeIterator.getReadOffset(); // position of corresponding reference base in the read
-        int genomeOffset = genomeIterator.getGenomeOffset(); // position of corresponding reference base in the read
-
-        while (genomeIterator.stepForwardOnGenome() != null) {
-
-            final int prevReadOffset = readOffset;
-            final int prevGenomeOffset = genomeOffset;
-
-            readOffset = genomeIterator.getReadOffset();
-            genomeOffset = genomeIterator.getGenomeOffset();
-
-            if (!( ((readOffset - prevReadOffset) > 0) && ((genomeOffset - prevGenomeOffset) > 0) )) {
-                continue;
-            }
-
-            if (readOffset >= (read.getLength()-1)) {
-                break;
-            }
-
-            // Corresponding index in the reference bases.
-            final int indexForRefBase = genomeIterator.getGenomePosition()-ref.getInterval().getStart();
-            if (indexForRefBase >= refBases.length) {
-                break;
-            }
-            final byte modeRef = refBases[indexForRefBase];
-            final byte modeAlt = read.getBase(readOffset);
-            final String k = OxoQScorer.createOxoQBinCacheKey(read.getBase(readOffset - 1), read.getBase(readOffset + 1), modeRef, modeAlt, isOriginalMolecule);
-            final OxoQBinKey v = stringOxoQBinKeyMap.getOrDefault(k, null);
-            if (v != null) {
-                result.add(v);
-            }
+        for (Pair<Character, Character> artifactMode : counts.keySet()) {
+            final RealMatrix count = counts.get(artifactMode);
+            final double totalBases = count.getEntry(PRO, REF) + count.getEntry(PRO, ALT) +
+                    count.getEntry(CON, REF) + count.getEntry(CON, ALT);
+            final double score = -10 * Math.log10(Math.max(count.getEntry(PRO, ALT)/totalBases -
+                    count.getEntry(CON, ALT)/totalBases, Math.pow(10, -10)));
+            result.put(artifactMode, score);
         }
 
         return result;

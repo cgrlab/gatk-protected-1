@@ -1,6 +1,7 @@
 package org.broadinstitute.hellbender.tools.exome;
 
 import htsjdk.samtools.metrics.MetricsFile;
+import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.commons.lang3.tuple.Pair;
 import org.broadinstitute.hellbender.cmdline.Argument;
 import org.broadinstitute.hellbender.cmdline.ArgumentCollection;
@@ -8,14 +9,18 @@ import org.broadinstitute.hellbender.cmdline.CommandLineProgram;
 import org.broadinstitute.hellbender.cmdline.CommandLineProgramProperties;
 import org.broadinstitute.hellbender.cmdline.argumentcollections.RequiredVariantInputArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.programgroups.VariantProgramGroup;
+import org.broadinstitute.hellbender.engine.FeatureInput;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.exome.orientationbiasvariantfilter.OxoQScorer;
 import org.broadinstitute.hellbender.tools.picard.analysis.artifacts.SequencingArtifactMetrics;
+import org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotation;
+import org.broadinstitute.hellbender.tools.walkers.annotator.VariantOverlapAnnotator;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -46,12 +51,14 @@ public class FilterByOrientationBias extends CommandLineProgram {
     protected File preAdapterMetricsFile;
 
     @Argument(
-            doc = "PreAdapter Detail artifacts of interest.  'C>A' for a single artifact.  Separated by commas to assume multiple artifacts at the same time:  'C>A,T>G'  Artifacts must be one base to one base (e.g. 'CC>CA' is illegal)",
+            doc = "PreAdapter Detail artifacts of interest on the forward strand.  'C>A' for a single artifact.  Separated by commas to assume multiple artifacts at the same time:  'C>A,T>G'  Artifacts must be one base to one base (e.g. 'CC>CA' is illegal).  C>A is OxoG.",
             shortName = ARTIFACT_MODES_SHORT_NAME,
             fullName = ARTIFACT_MODES_FULL_NAME,
             optional = true
     )
-    protected String artifactModes = "C>A";
+    protected List<String> artifactModes = Collections.singletonList("C>A");
+
+    private Map<VariantAnnotation, VariantOverlapAnnotator> annotators;
 
     @Override
     protected Object doWork() {
@@ -67,18 +74,29 @@ public class FilterByOrientationBias extends CommandLineProgram {
         // Get the OxoQ score, which gives an indication of how badly infested the file is.
         final Map<Pair<Character, Character>, Double> oxoQScoreMap = OxoQScorer.scoreOrientationBiasMetricsOverContext(mf.getMetrics());
 
+        // Parse the desired artifact modes from the input string.
         final List<Pair<Character, Character>> relevantArtifactModes = new ArrayList<>();
-        final String[]  artifactModesAsStrings = artifactModes.split(",");
-        for (String artifactMode: artifactModesAsStrings) {
+        for (String artifactMode: artifactModes) {
             final String[] splitArtifactMode = artifactMode.split(">");
+
+            if (!isValidArtifactMode(splitArtifactMode)) {
+                throw new UserException("Invalid artifact mode: " + String.join(">", splitArtifactMode));
+            }
+
             relevantArtifactModes.add(Pair.of(splitArtifactMode[0].charAt(0), splitArtifactMode[1].charAt(0)));
         }
 
+        // Apply filtering
+        for (FeatureInput<VariantContext> variants : VARIANT_ARGUMENTS.variantFiles) {
+            // TODO: Tag each whether it is in the artifact mode and the oxoQ score for the artifact mode.
+        }
+
+        // TODO: Apply the filter.
 
         return null;
     }
 
-    private boolean validArtifactMode(final String[] splitArtifactMode) {
+    private boolean isValidArtifactMode(final String[] splitArtifactMode) {
         // TODO: Fill this in.
         return true;
     }

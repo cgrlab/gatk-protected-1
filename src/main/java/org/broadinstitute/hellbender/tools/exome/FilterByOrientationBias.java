@@ -3,9 +3,7 @@ package org.broadinstitute.hellbender.tools.exome;
 import htsjdk.samtools.metrics.MetricsFile;
 import htsjdk.variant.variantcontext.*;
 import htsjdk.variant.variantcontext.writer.VariantContextWriter;
-import htsjdk.variant.vcf.VCFHeader;
-import htsjdk.variant.vcf.VCFHeaderLine;
-import htsjdk.variant.vcf.VCFSimpleHeaderLine;
+import htsjdk.variant.vcf.*;
 import org.apache.commons.lang3.tuple.Pair;
 import org.broadinstitute.hellbender.cmdline.Argument;
 import org.broadinstitute.hellbender.cmdline.CommandLineProgramProperties;
@@ -152,7 +150,7 @@ public class FilterByOrientationBias extends VariantWalker {
         // Setup header for output file
         final VCFHeader inputVCFHeader = getHeaderForVariants();
         final Set<VCFHeaderLine> headerLines = new LinkedHashSet<>(inputVCFHeader.getMetaDataInInputOrder());
-        headerLines.add(new VCFSimpleHeaderLine(OXOQ_FIELD_NAME, "OxoQ Orientation Score", "Measure of orientation bias for a given REF>ALT error."));
+        headerLines.add(new VCFFormatHeaderLine(OXOQ_FIELD_NAME, VCFHeaderLineCount.A, VCFHeaderLineType.Float, "Measure of orientation bias for a given REF>ALT error."));
 
         vcfWriter = GATKVariantContextUtils.createVCFWriter(outputFile, getReferenceDictionary(), false);
         final SampleList samples = new IndexedSampleList(inputVCFHeader.getGenotypeSamples());

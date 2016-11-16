@@ -8,10 +8,8 @@ import htsjdk.variant.vcf.VCFHeaderLine;
 import htsjdk.variant.vcf.VCFSimpleHeaderLine;
 import org.apache.commons.lang3.tuple.Pair;
 import org.broadinstitute.hellbender.cmdline.Argument;
-import org.broadinstitute.hellbender.cmdline.ArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.CommandLineProgramProperties;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
-import org.broadinstitute.hellbender.cmdline.argumentcollections.RequiredVariantInputArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.programgroups.VariantProgramGroup;
 import org.broadinstitute.hellbender.engine.FeatureContext;
 import org.broadinstitute.hellbender.engine.ReadsContext;
@@ -47,9 +45,9 @@ public class FilterByOrientationBias extends VariantWalker {
     public static final String ARTIFACT_MODES_FULL_NAME = "artifactModes";
 
 
-    @ArgumentCollection
-    protected static final RequiredVariantInputArgumentCollection VARIANT_ARGUMENTS =
-            new RequiredVariantInputArgumentCollection();
+//    @ArgumentCollection
+//    protected static final RequiredVariantInputArgumentCollection VARIANT_ARGUMENTS =
+//            new RequiredVariantInputArgumentCollection();
 
     @Argument(
             doc="Output Somatic SNP/Indel VCF file",

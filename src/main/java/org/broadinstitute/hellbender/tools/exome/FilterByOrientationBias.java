@@ -14,6 +14,7 @@ import org.broadinstitute.hellbender.engine.ReadsContext;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
 import org.broadinstitute.hellbender.engine.VariantWalker;
 import org.broadinstitute.hellbender.exceptions.UserException;
+import org.broadinstitute.hellbender.tools.exome.orientationbiasvariantfilter.ArtifactStatisticsScorer;
 import org.broadinstitute.hellbender.tools.exome.orientationbiasvariantfilter.OxoQScorer;
 import org.broadinstitute.hellbender.tools.picard.analysis.artifacts.SequencingArtifactMetrics;
 import org.broadinstitute.hellbender.tools.walkers.annotator.VariantAnnotation;
@@ -31,7 +32,7 @@ import java.util.stream.Collectors;
 
 // TODO:Command line property docs
 @CommandLineProgramProperties(
-        summary = "All variants are held in RAM.",
+        summary = "Note:  All variants are held in RAM.",
         oneLineSummary = "",
         programGroup = VariantProgramGroup.class
 )
@@ -41,11 +42,8 @@ public class FilterByOrientationBias extends VariantWalker {
     public static final String PRE_ADAPTER_METRICS_DETAIL_FILE_FULL_NAME = "preAdapterDetailFile";
     public static final String ARTIFACT_MODES_SHORT_NAME = "A";
     public static final String ARTIFACT_MODES_FULL_NAME = "artifactModes";
-
-
-//    @ArgumentCollection
-//    protected static final RequiredVariantInputArgumentCollection VARIANT_ARGUMENTS =
-//            new RequiredVariantInputArgumentCollection();
+    //TODO: Promote to GATKVCFConstants
+    public static final String FOXOG_TAG = "FOXOG";
 
     @Argument(
             doc="Output Somatic SNP/Indel VCF file",
@@ -76,10 +74,15 @@ public class FilterByOrientationBias extends VariantWalker {
     private List<Pair<Character, Character>> relevantArtifactModes;
 
     public final String OXOQ_FIELD_NAME="OxoQ";
+    public final String P_ARTIFACT_FIELD_NAME="P_artifact";
 
     public final Double OXOQ_NOT_ARTIFACT_SCORE=100.0;
+    public final double BIASP=0.96;
 
     private VariantContextWriter vcfWriter;
+
+    /** Each has an OxoQ annotation */
+    private List<VariantContext> firstPassVariants;
 
 
     @Override
@@ -93,7 +96,7 @@ public class FilterByOrientationBias extends VariantWalker {
             throw new UserException("Could not find file: " + preAdapterMetricsFile.getAbsolutePath());
         }
 
-        setupVCFWriter();
+        firstPassVariants = new ArrayList<>();
 
         // Get the OxoQ score, which gives an indication of how badly infested the file is.
         oxoQScoreMap = OxoQScorer.scoreOrientationBiasMetricsOverContext(mf.getMetrics());
@@ -109,6 +112,8 @@ public class FilterByOrientationBias extends VariantWalker {
 
             relevantArtifactModes.add(Pair.of(splitArtifactMode[0].charAt(0), splitArtifactMode[1].charAt(0)));
         }
+
+        setupVCFWriter();
     }
 
     private boolean isValidArtifactMode(final String[] splitArtifactMode) {
@@ -116,6 +121,17 @@ public class FilterByOrientationBias extends VariantWalker {
         return true;
     }
 
+    /**
+     *  Just adds the OxoQ annotation to the variant and creates a new variant.
+     *
+     *  Note: the writing of the VCF is not done here, since we need to aggregate once we have OxoQ scores.
+     *  Note:  No variant is dropped, if no additional annotation was needed, then the original format field is
+     *   preserved
+     * @param variant See {@link VariantWalker}
+     * @param readsContext See {@link VariantWalker}
+     * @param referenceContext See {@link VariantWalker}
+     * @param featureContext See {@link VariantWalker}
+     */
     @Override
     public void apply(VariantContext variant, ReadsContext readsContext, ReferenceContext referenceContext, FeatureContext featureContext) {
         VariantContextBuilder variantBuilder = new VariantContextBuilder(variant);
@@ -135,6 +151,10 @@ public class FilterByOrientationBias extends VariantWalker {
                     final Allele allele = genotype.getAllele(i);
                     if (allele.isCalled() && allele.isNonReference() && !allele.equals(Allele.SPAN_DEL) && allele.getBaseString().length() == 1) {
                         genotypeBuilder.attribute(OXOQ_FIELD_NAME, oxoQScoreMap.getOrDefault(Pair.of(refAllele, allele.getBaseString().charAt(0)), OXOQ_NOT_ARTIFACT_SCORE));
+
+                        final int totalAltAlleleCount = genotype.getAD()[i];
+                        final Double foxog = (Double) genotype.getAnyAttribute(FOXOG_TAG);
+                        genotypeBuilder.attribute(P_ARTIFACT_FIELD_NAME, ArtifactStatisticsScorer.calculateArtifactPValue(totalAltAlleleCount, (int) Math.round(foxog * totalAltAlleleCount), BIASP));
                     }
                 }
             }
@@ -142,7 +162,7 @@ public class FilterByOrientationBias extends VariantWalker {
         }
         variantBuilder.genotypes(newGenotypes);
         final VariantContext updatedVariant = variantBuilder.make();
-        vcfWriter.add(updatedVariant);
+        firstPassVariants.add(updatedVariant);
     }
 
     private void setupVCFWriter() {
@@ -151,12 +171,41 @@ public class FilterByOrientationBias extends VariantWalker {
         final VCFHeader inputVCFHeader = getHeaderForVariants();
         final Set<VCFHeaderLine> headerLines = new LinkedHashSet<>(inputVCFHeader.getMetaDataInInputOrder());
         headerLines.add(new VCFFormatHeaderLine(OXOQ_FIELD_NAME, VCFHeaderLineCount.A, VCFHeaderLineType.Float, "Measure of orientation bias for a given REF>ALT error."));
-
+        headerLines.add(new VCFFormatHeaderLine(P_ARTIFACT_FIELD_NAME, VCFHeaderLineCount.A, VCFHeaderLineType.Float, "p value for the given REF>ALT artifact."));
+        headerLines.add(new VCFSimpleHeaderLine("orientation_bias_artifact_modes", String.join(",", artifactModes), "The artifact modes that were used for orientation bias artifact filtering for this VCF"));
+        headerLines.add(new VCFHeaderLine("command", getCommandLine()));
         vcfWriter = GATKVariantContextUtils.createVCFWriter(outputFile, getReferenceDictionary(), false);
         final SampleList samples = new IndexedSampleList(inputVCFHeader.getGenotypeSamples());
         final Set<String> sampleNameSet = samples.asSetOfSamples();
         final VCFHeader vcfHeader = new VCFHeader(headerLines, sampleNameSet);
         vcfWriter.writeHeader(vcfHeader);
+    }
+
+    @Override
+    public Object onTraversalSuccess() {
+
+        final Comparator<VariantContext> variantContextPArtifactComparator = new Comparator<VariantContext>() {
+            @Override
+            public int compare(VariantContext o1, VariantContext o2) {
+                final Double o1PArtifact = (Double) o1.getAttribute(P_ARTIFACT_FIELD_NAME, 0.0);
+                final Double o2PArtifact = (Double) o2.getAttribute(P_ARTIFACT_FIELD_NAME, 0.0);
+                if (o2PArtifact.equals(o1PArtifact)) {
+                    return 0;
+                } else if (o1PArtifact > o2PArtifact) {
+                    return 1;
+                } else {
+                    return -1;
+                }
+            }
+        };
+        final SortedSet<VariantContext> sortedVariants = new TreeSet<>(variantContextPArtifactComparator);
+        sortedVariants.addAll(firstPassVariants);
+
+        // Calculate how many artifacts need to be cut
+
+        // Annotate the filtering for each variant
+
+        return null;
     }
 
     @Override

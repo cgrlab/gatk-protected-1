@@ -170,8 +170,8 @@ public class FilterByOrientationBias extends VariantWalker {
         // Setup header for output file
         final VCFHeader inputVCFHeader = getHeaderForVariants();
         final Set<VCFHeaderLine> headerLines = new LinkedHashSet<>(inputVCFHeader.getMetaDataInInputOrder());
-        headerLines.add(new VCFFormatHeaderLine(OXOQ_FIELD_NAME, VCFHeaderLineCount.A, VCFHeaderLineType.Float, "Measure of orientation bias for a given REF>ALT error."));
-        headerLines.add(new VCFFormatHeaderLine(P_ARTIFACT_FIELD_NAME, VCFHeaderLineCount.A, VCFHeaderLineType.Float, "p value for the given REF>ALT artifact."));
+        headerLines.add(new VCFFormatHeaderLine(OXOQ_FIELD_NAME, VCFHeaderLineCount.A, VCFHeaderLineType.Float, "Measure of orientation bias for a given REF-ALT error."));
+        headerLines.add(new VCFFormatHeaderLine(P_ARTIFACT_FIELD_NAME, VCFHeaderLineCount.A, VCFHeaderLineType.Float, "p value for the given REF-ALT artifact."));
         headerLines.add(new VCFSimpleHeaderLine("orientation_bias_artifact_modes", String.join(",", artifactModes), "The artifact modes that were used for orientation bias artifact filtering for this VCF"));
         headerLines.add(new VCFHeaderLine("command", getCommandLine()));
         vcfWriter = GATKVariantContextUtils.createVCFWriter(outputFile, getReferenceDictionary(), false);

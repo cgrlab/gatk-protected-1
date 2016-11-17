@@ -156,7 +156,7 @@ public class FilterByOrientationBias extends VariantWalker {
                         genotypeBuilder.attribute(OXOQ_FIELD_NAME, oxoQScoreMap.getOrDefault(Pair.of(refAllele, allele.getBaseString().charAt(0)), OXOQ_NOT_ARTIFACT_SCORE));
 
                         final int totalAltAlleleCount = genotype.getAD()[i];
-                        final Double foxog = (Double) genotype.getAnyAttribute(FOXOG_TAG);
+                        final Double foxog = Double.parseDouble((String) genotype.getAnyAttribute(FOXOG_TAG));
                         genotypeBuilder.attribute(P_ARTIFACT_FIELD_NAME, ArtifactStatisticsScorer.calculateArtifactPValue(totalAltAlleleCount, (int) Math.round(foxog * totalAltAlleleCount), BIASP));
                     }
                 }

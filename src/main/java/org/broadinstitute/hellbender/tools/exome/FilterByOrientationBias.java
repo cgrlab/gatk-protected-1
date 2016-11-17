@@ -83,6 +83,7 @@ public class FilterByOrientationBias extends VariantWalker {
 
     /** Each has an OxoQ annotation */
     private List<VariantContext> firstPassVariants;
+    private List<VariantContext> unfilteredArtifactModeVariants;
 
 
     @Override
@@ -97,6 +98,7 @@ public class FilterByOrientationBias extends VariantWalker {
         }
 
         firstPassVariants = new ArrayList<>();
+        unfilteredArtifactModeVariants = new ArrayList<>();
 
         // Get the OxoQ score, which gives an indication of how badly infested the file is.
         oxoQScoreMap = OxoQScorer.scoreOrientationBiasMetricsOverContext(mf.getMetrics());
@@ -104,10 +106,10 @@ public class FilterByOrientationBias extends VariantWalker {
         // Parse the desired artifact modes from the input string.
         relevantArtifactModes  = new ArrayList<>();
         for (String artifactMode: artifactModes) {
-            final String[] splitArtifactMode = artifactMode.split(">");
+            final String[] splitArtifactMode = artifactMode.split("/");
 
             if (!isValidArtifactMode(splitArtifactMode)) {
-                throw new UserException("Invalid artifact mode: " + String.join(">", splitArtifactMode));
+                throw new UserException("Invalid artifact mode: " + String.join("/", splitArtifactMode));
             }
 
             relevantArtifactModes.add(Pair.of(splitArtifactMode[0].charAt(0), splitArtifactMode[1].charAt(0)));
@@ -149,7 +151,8 @@ public class FilterByOrientationBias extends VariantWalker {
                 final Character refAllele = (char) refAlleles.get(0).getBytes()[0];
                 for (int i = 1; i < alleles.size(); i ++ ) {
                     final Allele allele = genotype.getAllele(i);
-                    if (allele.isCalled() && allele.isNonReference() && !allele.equals(Allele.SPAN_DEL) && allele.getBaseString().length() == 1) {
+                    if (allele.isCalled() && allele.isNonReference() && !allele.equals(Allele.SPAN_DEL)
+                            && allele.getBaseString().length() == 1) {
                         genotypeBuilder.attribute(OXOQ_FIELD_NAME, oxoQScoreMap.getOrDefault(Pair.of(refAllele, allele.getBaseString().charAt(0)), OXOQ_NOT_ARTIFACT_SCORE));
 
                         final int totalAltAlleleCount = genotype.getAD()[i];
@@ -198,7 +201,12 @@ public class FilterByOrientationBias extends VariantWalker {
                 }
             }
         };
+
+        // Grab unfiltered variants only
+
+
         final SortedSet<VariantContext> sortedVariants = new TreeSet<>(variantContextPArtifactComparator);
+
         sortedVariants.addAll(firstPassVariants);
 
         // Calculate how many artifacts need to be cut
